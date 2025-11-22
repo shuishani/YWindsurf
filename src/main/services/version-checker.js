@@ -21,57 +21,84 @@ class VersionChecker {
     try {
       logger.info('检查更新中...');
       
-      // 远程检查 - 您可以控制这个链接的内容
-      const remoteCheckUrl = 'https://raw.githubusercontent.com/1815578857/windsurf-tool/main/version-control.json';
+      // 远程检查 - 使用多个备用地址确保国内外都能访问
+      const remoteCheckUrls = [
+        'https://raw.githubusercontent.com/1815578857/windsurf-tool/main/version-control.json', // GitHub 主要
+        'https://cdn.jsdelivr.net/gh/1815578857/windsurf-tool@main/version-control.json', // jsDelivr CDN 备用
+        'https://gitee.com/windsurf1815578857/windsurf-tool/raw/main/version-control.json' // Gitee 备用
+      ];
       
-      try {
-        const response = await axios.get(remoteCheckUrl, {
-          timeout: 10000,
-          headers: {
-            'User-Agent': 'YWindsurf-UpdateChecker',
-            'Cache-Control': 'no-cache'
-          }
-        });
-        
-        const remoteConfig = response.data;
-        
-        // 检查是否强制停用
-        if (remoteConfig.forceStop) {
-          logger.info('检测到远程强制停用');
-          this.showForceStopDialog(remoteConfig.stopMessage || '软件已停用，请联系作者获取最新版本');
-          return true;
-        }
-        
-        // 检查版本更新
-        if (this.isNewerVersion(remoteConfig.latestVersion, this.currentVersion)) {
-          logger.info(`发现新版本: ${remoteConfig.latestVersion} (当前: ${this.currentVersion})`);
+      let remoteConfig = null;
+      let lastError = null;
+      
+      // 依次尝试多个地址
+      for (let i = 0; i < remoteCheckUrls.length; i++) {
+        const url = remoteCheckUrls[i];
+        try {
+          logger.info(`正在尝试访问远程配置 [${i + 1}/${remoteCheckUrls.length}]: ${url}`);
           
-          if (remoteConfig.forceUpdate) {
-            this.showForceUpdateDialog(remoteConfig.latestVersion);
-            return true;
-          } else {
-            this.showUpdateDialog(remoteConfig.latestVersion);
-            return true;
+          const response = await axios.get(url, {
+            timeout: 10000, // 每个地址10秒超时
+            headers: {
+              'User-Agent': 'YWindsurf-UpdateChecker',
+              'Cache-Control': 'no-cache'
+            }
+          });
+          
+          logger.info(`远程配置获取成功，使用地址: ${url}`);
+          remoteConfig = response.data;
+          break; // 成功获取，跳出循环
+          
+        } catch (error) {
+          logger.warning(`地址 ${url} 访问失败: ${error.message}`);
+          lastError = error;
+          
+          // 如果不是最后一个地址，继续尝试下一个
+          if (i < remoteCheckUrls.length - 1) {
+            logger.info('尝试下一个备用地址...');
+            continue;
           }
         }
-        
-        logger.info('当前已是最新版本');
-        if (showNoUpdateDialog) {
-          this.showNoUpdateDialog();
-        }
-        return false;
-        
-      } catch (networkError) {
-        logger.error('无法连接到更新服务器，软件无法使用');
-        
-        // 网络失败时强制联系作者，不允许离线使用
-        this.showNetworkFailDialog();
+      }
+      
+      // 如果所有地址都失败了
+      if (!remoteConfig) {
+        throw lastError || new Error('所有远程地址都无法访问');
+      }
+      
+      // 检查是否强制停用
+      if (remoteConfig.forceStop) {
+        logger.info('检测到远程强制停用');
+        this.showForceStopDialog(remoteConfig.stopMessage || '软件已停用，请联系作者获取最新版本');
         return true;
       }
       
-    } catch (error) {
-      logger.error('检查更新失败', error.message);
+      // 检查版本更新
+      if (this.isNewerVersion(remoteConfig.latestVersion, this.currentVersion)) {
+        logger.info(`发现新版本: ${remoteConfig.latestVersion} (当前: ${this.currentVersion})`);
+        
+        if (remoteConfig.forceUpdate) {
+          this.showForceUpdateDialog(remoteConfig.latestVersion);
+          return true;
+        } else {
+          this.showUpdateDialog(remoteConfig.latestVersion);
+          return true;
+        }
+      }
+      
+      logger.info('当前已是最新版本');
+      if (showNoUpdateDialog) {
+        this.showNoUpdateDialog();
+      }
       return false;
+      
+    } catch (error) {
+      logger.error('网络连接失败', `错误详情: ${error.message}`);
+      logger.error('错误代码', error.code || '未知');
+      
+      // 网络失败时直接退出，不给用户选择
+      this.showNetworkFailAndExit(error);
+      return true;
     }
   }
 
@@ -93,29 +120,33 @@ class VersionChecker {
   }
 
   /**
-   * 显示网络失败对话框
+   * 显示网络失败并直接退出
    */
-  showNetworkFailDialog() {
-    const result = dialog.showMessageBoxSync(null, {
+  showNetworkFailAndExit(error) {
+    let errorDetail = '软件需要联网验证才能使用';
+    
+    // 根据错误类型提供更具体的信息
+    if (error.code === 'ENOTFOUND') {
+      errorDetail = '无法解析域名，请检查DNS设置';
+    } else if (error.code === 'ECONNREFUSED') {
+      errorDetail = '连接被拒绝，请检查防火墙设置';
+    } else if (error.code === 'ETIMEDOUT') {
+      errorDetail = '连接超时，请检查网络连接';
+    } else if (error.message.includes('certificate')) {
+      errorDetail = 'SSL证书验证失败，请检查系统时间';
+    }
+
+    dialog.showMessageBoxSync(null, {
       type: 'error',
-      title: '网络连接失败',
+      title: '网络验证失败',
       message: '软件无法使用',
-      detail: `软件需要联网验证才能使用\n\n请检查您的网络连接后重试`,
-      buttons: ['重试连接', '退出程序'],
+      detail: `${errorDetail}\n\n软件将自动退出`,
+      buttons: ['确定'],
       defaultId: 0,
-      cancelId: 1,
       noLink: true
     });
-
-    if (result === 0) {
-      // 重试连接
-      setTimeout(() => {
-        this.checkForUpdates(false);
-      }, 3000);
-      return; // 不退出，给用户重试机会
-    }
     
-    // 退出程序
+    // 直接退出程序，不给选择
     setTimeout(() => {
       const { app } = require('electron');
       app.quit();
