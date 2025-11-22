@@ -307,11 +307,14 @@ function registerHomeIPC(app) {
         logger.error('读取账号信息失败', e.message);
       }
       
+      // Windsurf 版本
+      const windsurfVersion = '1.12.35';
+      
       return {
         success: true,
         windsurfPath: windsurfPath || '未检测到',
         extensionVersion: '1.48.2',
-        softwareVersion: '1.12.28',
+        softwareVersion: windsurfVersion, // Windsurf 软件版本
         machineId: machineId,
         currentAccount: currentAccount
       };

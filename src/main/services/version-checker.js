@@ -1,9 +1,6 @@
 const { dialog, shell } = require('electron');
 const axios = require('axios');
-const { createTaggedLogger } = require('../utils/logger');
-
-// 创建带标签的logger实例
-const logger = createTaggedLogger('版本检查');
+const { logger } = require('../utils/logger');
 
 class VersionChecker {
   constructor() {
@@ -23,9 +20,8 @@ class VersionChecker {
       
       // 远程检查 - 使用多个备用地址确保国内外都能访问
       const remoteCheckUrls = [
-        'https://gitee.com/shuishangitee/windsurf-tool/raw/main/version-control.json', // Gitee 国内优先
-        'https://raw.githubusercontent.com/1815578857/windsurf-tool/main/version-control.json', // GitHub 备用
-        'https://cdn.jsdelivr.net/gh/1815578857/windsurf-tool@main/version-control.json' // jsDelivr CDN 备用
+        'https://gitee.com/shuishangitee/windsurf-control/raw/master/version-control.json', // 尝试 master 分支
+        'https://gitee.com/shuishangitee/windsurf-control/raw/main/version-control.json' // 备用 main 分支
       ];
       
       let remoteConfig = null;
@@ -35,27 +31,21 @@ class VersionChecker {
       for (let i = 0; i < remoteCheckUrls.length; i++) {
         const url = remoteCheckUrls[i];
         try {
-          logger.info(`正在尝试访问远程配置 [${i + 1}/${remoteCheckUrls.length}]: ${url}`);
-          
           const response = await axios.get(url, {
-            timeout: 10000, // 每个地址10秒超时
+            timeout: 3000, // 减少到3秒超时
             headers: {
               'User-Agent': 'YWindsurf-UpdateChecker',
               'Cache-Control': 'no-cache'
             }
           });
-          
-          logger.info(`远程配置获取成功，使用地址: ${url}`);
           remoteConfig = response.data;
           break; // 成功获取，跳出循环
           
         } catch (error) {
-          logger.warning(`地址 ${url} 访问失败: ${error.message}`);
           lastError = error;
           
           // 如果不是最后一个地址，继续尝试下一个
           if (i < remoteCheckUrls.length - 1) {
-            logger.info('尝试下一个备用地址...');
             continue;
           }
         }
@@ -68,16 +58,17 @@ class VersionChecker {
       
       // 检查是否强制停用
       if (remoteConfig.forceStop) {
-        logger.info('检测到远程强制停用');
+        logger.warning('检测到远程强制停用');
         this.showForceStopDialog(remoteConfig.stopMessage || '软件已停用，请联系作者获取最新版本');
         return true;
       }
       
       // 检查版本更新
       if (this.isNewerVersion(remoteConfig.latestVersion, this.currentVersion)) {
-        logger.info(`发现新版本: ${remoteConfig.latestVersion} (当前: ${this.currentVersion})`);
+        logger.warning(`发现新版本: ${remoteConfig.latestVersion} (当前: ${this.currentVersion})`);
         
         if (remoteConfig.forceUpdate) {
+          logger.warning('需要强制更新');
           this.showForceUpdateDialog(remoteConfig.latestVersion);
           return true;
         } else {
@@ -86,7 +77,7 @@ class VersionChecker {
         }
       }
       
-      logger.info('当前已是最新版本');
+      logger.success('当前已是最新版本');
       if (showNoUpdateDialog) {
         this.showNoUpdateDialog();
       }
@@ -96,7 +87,7 @@ class VersionChecker {
       logger.error('网络连接失败', `错误详情: ${error.message}`);
       logger.error('错误代码', error.code || '未知');
       
-      // 网络失败时直接退出，不给用户选择
+      // 网络失败时强制退出，不允许使用
       this.showNetworkFailAndExit(error);
       return true;
     }
@@ -122,12 +113,12 @@ class VersionChecker {
   /**
    * 显示网络失败并直接退出
    */
-  showNetworkFailAndExit(error) {
+  async showNetworkFailAndExit(error) {
     let errorDetail = '软件需要联网验证才能使用';
     
     // 根据错误类型提供更具体的信息
     if (error.code === 'ENOTFOUND') {
-      errorDetail = '无法解析域名，请检查DNS设置';
+      errorDetail = '无法解析域名，请检查网络连接';
     } else if (error.code === 'ECONNREFUSED') {
       errorDetail = '连接被拒绝，请检查防火墙设置';
     } else if (error.code === 'ETIMEDOUT') {
@@ -136,21 +127,157 @@ class VersionChecker {
       errorDetail = 'SSL证书验证失败，请检查系统时间';
     }
 
-    dialog.showMessageBoxSync(null, {
-      type: 'error',
-      title: '网络验证失败',
-      message: '软件无法使用',
-      detail: `${errorDetail}\n\n软件将自动退出`,
-      buttons: ['确定'],
-      defaultId: 0,
-      noLink: true
+    await this.showCustomDialog({
+      title: '网络连接失败',
+      content: `${errorDetail}\n\n软件需要联网验证才能使用\n\n请检查网络连接后重新启动软件`,
+      confirmText: '确定',
+      showCancel: false
     });
     
-    // 直接退出程序，不给选择
+    // 直接退出程序
     setTimeout(() => {
       const { app } = require('electron');
       app.quit();
-    }, 1000);
+    }, 500);
+  }
+
+  /**
+   * 使用现有的弹窗样式显示对话框
+   */
+  showCustomDialog(config) {
+    const { BrowserWindow } = require('electron');
+    const path = require('path');
+    
+    const dialogWindow = new BrowserWindow({
+      width: 450,
+      height: 300,
+      resizable: false,
+      minimizable: false,
+      maximizable: false,
+      alwaysOnTop: true,
+      center: true,
+      frame: false,
+      transparent: true,
+      webPreferences: {
+        nodeIntegration: true,
+        contextIsolation: false
+      }
+    });
+
+    // 使用与您软件中删除确认弹窗相同的样式
+    const dialogHtml = `
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <meta charset="UTF-8">
+        <style>
+            * { margin: 0; padding: 0; box-sizing: border-box; }
+            body {
+                font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Helvetica Neue', sans-serif;
+                background: rgba(0,0,0,0.5);
+                height: 100vh;
+                display: flex;
+                justify-content: center;
+                align-items: center;
+            }
+            .dialog {
+                background: white;
+                border-radius: 12px;
+                padding: 24px;
+                max-width: 400px;
+                width: 90%;
+                box-shadow: 0 10px 30px rgba(0,0,0,0.3);
+            }
+            .dialog-header {
+                margin-bottom: 20px;
+            }
+            .dialog-title {
+                margin: 0 0 12px 0;
+                color: #1d1d1f;
+                font-size: 18px;
+                font-weight: 600;
+            }
+            .dialog-message {
+                margin: 0;
+                color: #424245;
+                line-height: 1.5;
+                white-space: pre-line;
+            }
+            .dialog-buttons {
+                display: flex;
+                gap: 12px;
+            }
+            .dialog-btn {
+                flex: 1;
+                padding: 10px;
+                border: none;
+                border-radius: 6px;
+                cursor: pointer;
+                font-size: 14px;
+            }
+            .btn-cancel {
+                background: #f5f5f7;
+                color: #1d1d1f;
+            }
+            .btn-confirm {
+                background: #007aff;
+                color: white;
+            }
+        </style>
+    </head>
+    <body>
+        <div class="dialog">
+            <div class="dialog-header">
+                <h3 class="dialog-title">${config.title}</h3>
+                <p class="dialog-message">${config.content}</p>
+            </div>
+            <div class="dialog-buttons">
+                ${config.showCancel ? '<button class="dialog-btn btn-cancel" onclick="handleCancel()">取消</button>' : ''}
+                <button class="dialog-btn btn-confirm" onclick="handleConfirm()">${config.confirmText}</button>
+            </div>
+        </div>
+        
+        <script>
+            const { ipcRenderer } = require('electron');
+            
+            function handleConfirm() {
+                ipcRenderer.send('dialog-result', 'confirm');
+            }
+            
+            function handleCancel() {
+                ipcRenderer.send('dialog-result', 'cancel');
+            }
+        </script>
+    </body>
+    </html>`;
+
+    dialogWindow.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent(dialogHtml));
+    
+    return new Promise((resolve) => {
+      const { ipcMain } = require('electron');
+      ipcMain.once('dialog-result', (event, result) => {
+        dialogWindow.close();
+        resolve(result);
+      });
+    });
+  }
+
+  /**
+   * 显示强制更新对话框
+   */
+  async showForceUpdateDialog(newVersion) {
+    await this.showCustomDialog({
+      title: '发现新版本',
+      content: `检测到新版本，需要更新后才能继续使用。\n\n当前版本：v${this.currentVersion}\n最新版本：v${newVersion}\n\n获取更新请联系：QQ ${this.contactQQ}`,
+      confirmText: '确定',
+      showCancel: false
+    });
+    
+    // 点击确定后退出程序
+    setTimeout(() => {
+      const { app } = require('electron');
+      app.quit();
+    }, 500);
   }
 
   /**
@@ -179,32 +306,6 @@ class VersionChecker {
     }, 1000);
   }
 
-  /**
-   * 显示强制更新对话框
-   */
-  showForceUpdateDialog(newVersion) {
-    const result = dialog.showMessageBoxSync(null, {
-      type: 'warning',
-      title: '必须更新',
-      message: this.updateMessage,
-      detail: `当前版本: ${this.currentVersion}\n最新版本: ${newVersion}\n\n请联系QQ: ${this.contactQQ} 获取最新版本\n更新后才能继续使用本软件`,
-      buttons: ['联系QQ获取更新', '退出程序'],
-      defaultId: 0,
-      cancelId: 1,
-      noLink: true
-    });
-
-    if (result === 0) {
-      // 联系QQ
-      this.openQQContact();
-    }
-    
-    // 无论选择什么都退出程序（强制更新）
-    setTimeout(() => {
-      const { app } = require('electron');
-      app.quit();
-    }, 1000);
-  }
 
   /**
    * 显示普通更新对话框
@@ -329,17 +430,8 @@ class VersionChecker {
    * 自动检查更新（应用启动时）
    */
   async autoCheckForUpdates() {
-    // 强制更新模式下立即检查，不延迟
-    if (this.forceUpdate) {
-      setTimeout(async () => {
-        await this.checkForUpdates(false);
-      }, 2000); // 只延迟2秒，让用户看到应用界面
-    } else {
-      // 普通模式延迟5秒
-      setTimeout(async () => {
-        await this.checkForUpdates(false);
-      }, 5000);
-    }
+    // 立即开始检查，不延迟
+    return await this.checkForUpdates(false);
   }
 }
 

@@ -73,7 +73,17 @@ function createWindow() {
   }
 }
 
-app.whenReady().then(() => {
+app.whenReady().then(async () => {
+  // 先进行版本检查
+  const versionChecker = new VersionChecker();
+  const needsUpdate = await versionChecker.autoCheckForUpdates();
+  
+  // 如果需要强制更新，不创建主窗口
+  if (needsUpdate) {
+    return; // 版本检查器会显示更新对话框并退出应用
+  }
+  
+  // 版本检查通过，创建主窗口
   createWindow();
   
   // 注册所有IPC处理器（只注册一次，在窗口创建后）
@@ -81,10 +91,6 @@ app.whenReady().then(() => {
     registerAllIPC(app, mainWindow);
     ipcRegistered = true;
   }
-
-  // 启动版本检查
-  const versionChecker = new VersionChecker();
-  versionChecker.autoCheckForUpdates();
 });
 
 app.on('window-all-closed', () => {

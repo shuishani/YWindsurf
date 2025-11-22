@@ -23,7 +23,12 @@ function showToast(message, type = 'success') {
     align-items: center;
     gap: 8px;
     animation: slideIn 0.3s ease;
-    border-left: 4px solid ${type === 'success' ? '#34c759' : '#ff3b30'};
+    border-left: 4px solid ${
+      type === 'success' ? '#34c759' : 
+      type === 'info' ? '#007aff' : 
+      type === 'warning' ? '#ff9500' : 
+      '#ff3b30'
+    };
   `;
   
   document.body.appendChild(toast);
