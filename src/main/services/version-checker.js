@@ -23,9 +23,9 @@ class VersionChecker {
       
       // 远程检查 - 使用多个备用地址确保国内外都能访问
       const remoteCheckUrls = [
-        'https://raw.githubusercontent.com/1815578857/windsurf-tool/main/version-control.json', // GitHub 主要
-        'https://cdn.jsdelivr.net/gh/1815578857/windsurf-tool@main/version-control.json', // jsDelivr CDN 备用
-        'https://gitee.com/windsurf1815578857/windsurf-tool/raw/main/version-control.json' // Gitee 备用
+        'https://gitee.com/shuishangitee/windsurf-tool/raw/main/version-control.json', // Gitee 国内优先
+        'https://raw.githubusercontent.com/1815578857/windsurf-tool/main/version-control.json', // GitHub 备用
+        'https://cdn.jsdelivr.net/gh/1815578857/windsurf-tool@main/version-control.json' // jsDelivr CDN 备用
       ];
       
       let remoteConfig = null;
