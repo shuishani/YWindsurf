@@ -1,0 +1,93 @@
+{
+  "name": "windsurf-account-switcher",
+  "version": "2.0.0",
+  "description": "YWindsurf 账号管理工具 - 批量注册、自动切换、账号池管理",
+  "main": "src/main/index.js",
+  "scripts": {
+    "start": "powershell -Command \"[Console]::OutputEncoding = [System.Text.Encoding]::UTF8; electron-forge start\"",
+    "start:prod": "powershell -Command \"[Console]::OutputEncoding = [System.Text.Encoding]::UTF8; $env:NODE_ENV='production'; electron .\"",
+    "dev": "powershell -Command \"[Console]::OutputEncoding = [System.Text.Encoding]::UTF8; electron . --dev\"",
+    "build": "electron-builder",
+    "dist": "electron-builder --publish=never",
+    "build:win": "electron-builder --win",
+    "package": "electron-forge package",
+    "make": "electron-forge make"
+  },
+  "keywords": [
+    "windsurf",
+    "account",
+    "switcher"
+  ],
+  "author": "YWindsurf Team",
+  "license": "MIT",
+  "dependencies": {
+    "@bufbuild/protobuf": "^2.10.1",
+    "axios": "^1.13.2",
+    "better-sqlite3": "^9.2.2",
+    "electron-squirrel-startup": "^1.0.1",
+    "imap": "^0.8.19",
+    "mailparser": "^3.6.5",
+    "playwright": "^1.56.1",
+    "uuid": "^9.0.1"
+  },
+  "devDependencies": {
+    "@electron-forge/cli": "^7.10.2",
+    "@electron-forge/maker-squirrel": "^7.10.2",
+    "@electron-forge/plugin-auto-unpack-natives": "^7.10.2",
+    "@electron-forge/plugin-fuses": "^7.10.2",
+    "@electron/fuses": "^1.8.0",
+    "electron": "^27.1.0"
+  },
+  "build": {
+    "appId": "com.windsurf.account.switcher",
+    "productName": "YWindsurf 2.0",
+    "asar": true,
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "main.js",
+      "index.html",
+      "renderer.js",
+      "src/**/*",
+      "bin/**/*",
+      "node_modules/**/*",
+      "package.json"
+    ],
+    "ignore": [
+      "image/**/*",
+      "*.md",
+      ".git*",
+      "dist/**/*",
+      "out/**/*"
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "artifactName": "${productName}-${version}-${arch}.${ext}",
+      "requestedExecutionLevel": "requireAdministrator"
+    },
+    "forceCodeSigning": false,
+    "electronDownload": {
+      "cache": "./cache"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "perMachine": true,
+      "deleteAppDataOnUninstall": false,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "YWindsurf 2.0"
+    },
+    "portable": {
+      "artifactName": "${productName}-${version}-portable.exe"
+    }
+  }
+}

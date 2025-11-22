@@ -1,0 +1,538 @@
+/* 账号管理页面样式 */
+
+/* ==================== 统计卡片 ==================== */
+.stats-container {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 16px;
+  margin-bottom: 20px;
+}
+
+.stat-card {
+  background: white;
+  padding: 20px 24px;
+  border-radius: 12px;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+  border: 1px solid rgba(0,0,0,0.05);
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  transition: all 0.2s ease;
+}
+
+.stat-card:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(0,0,0,0.08);
+}
+
+.stat-value {
+  font-size: 24px;
+  font-weight: 700;
+  margin-bottom: 4px;
+  color: #1d1d1f;
+  letter-spacing: -0.5px;
+  line-height: 1.2;
+}
+
+.stat-label {
+  font-size: 13px;
+  color: #86868b;
+  font-weight: 500;
+}
+
+/* ==================== 批量操作面板 ==================== */
+
+/* 批量操作布局 */
+.batch-operation-row {
+  display: flex;
+  align-items: center;
+  padding: 12px 0;
+  border-bottom: 1px solid #f5f5f7;
+}
+
+.batch-operation-row:last-child {
+  border-bottom: none;
+  padding-bottom: 0;
+}
+
+.operation-label {
+  min-width: 100px;
+  font-size: 14px;
+  font-weight: 600;
+  color: #1d1d1f;
+  margin-right: 20px;
+}
+
+.operation-controls {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex: 1;
+}
+
+/* 紧凑控件 */
+.compact-control-group {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.compact-input, .compact-select {
+  height: 32px;
+  padding: 0 8px;
+  border: 1px solid #e5e5ea;
+  border-radius: 6px;
+  font-size: 13px;
+  background: white;
+  min-width: 60px;
+}
+
+.compact-input:focus, .compact-select:focus {
+  outline: none;
+  border-color: #007aff;
+  box-shadow: 0 0 0 2px rgba(0, 122, 255, 0.1);
+}
+
+.compact-checkbox {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+  font-size: 13px;
+  color: #1d1d1f;
+}
+
+.compact-checkbox input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  margin: 0;
+}
+
+/* 现代按钮（表格工具栏使用） */
+.modern-btn {
+  height: 36px;
+  padding: 0 16px;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 500;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  cursor: pointer;
+  transition: all 0.2s;
+  border: none;
+  white-space: nowrap;
+}
+
+.modern-btn.btn-primary {
+  background: #007aff;
+  color: white;
+}
+
+.modern-btn.btn-primary:hover {
+  background: #0062cc;
+  box-shadow: 0 2px 8px rgba(0, 122, 255, 0.25);
+  transform: translateY(-1px);
+}
+
+.modern-btn.btn-secondary {
+  background: white;
+  color: #1d1d1f;
+  border: 1px solid #d2d2d7;
+}
+
+.modern-btn.btn-secondary:hover {
+  background: #f5f5f7;
+  border-color: #b5b5b9;
+}
+
+/* 紧凑按钮（批量操作面板使用） */
+.compact-btn {
+  height: 32px;
+  padding: 0 16px;
+  border: none;
+  border-radius: 6px;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  white-space: nowrap;
+}
+
+.compact-btn.btn-primary {
+  background: #007aff;
+  color: white;
+}
+
+.compact-btn.btn-primary:hover {
+  background: #0056cc;
+  transform: translateY(-1px);
+}
+
+.compact-btn.btn-success {
+  background: #34c759;
+  color: white;
+}
+
+.compact-btn.btn-success:hover {
+  background: #28a745;
+  transform: translateY(-1px);
+}
+
+.compact-btn.btn-secondary {
+  background: #f5f5f7;
+  color: #1d1d1f;
+  border: 1px solid #e5e5ea;
+}
+
+.compact-btn.btn-secondary:hover {
+  background: #e5e5ea;
+  transform: translateY(-1px);
+}
+
+/* ==================== 虚拟卡选择器 ==================== */
+.card-selector-dropdown {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  margin-top: 4px;
+  background: white;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+  z-index: 1000;
+  max-height: 400px;
+  overflow-y: auto;
+  min-width: 380px;
+}
+
+.card-option {
+  display: grid;
+  grid-template-columns: 24px 1fr auto;
+  gap: 12px;
+  align-items: center;
+  padding: 10px 16px;
+  cursor: pointer;
+  background: white;
+  border-bottom: 1px solid #f0f0f0;
+  font-family: 'SF Mono', Consolas, monospace;
+}
+
+.card-option:last-child {
+  border-bottom: none;
+}
+
+.card-option:hover {
+  background: #f8f9fa;
+}
+
+.card-option.selected {
+  background: #e6f7ff;
+}
+
+/* 卡片选项样式 */
+.card-icon {
+  font-size: 16px;
+  color: #666;
+  text-align: center;
+}
+
+.card-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+/* 卡号样式 - 更清晰 */
+.card-number {
+  font-size: 14px;
+  font-weight: 500;
+  color: #111;
+  letter-spacing: 0.5px;
+}
+
+/* 卡片详情 - 有效期和CVV */
+.card-details {
+  font-size: 12px;
+  color: #666;
+  display: flex;
+  gap: 12px;
+}
+
+/* 卡片状态 */
+.card-status {
+  font-size: 12px;
+  color: #888;
+  text-align: right;
+}
+
+/* BIN卡头特殊样式 */
+.card-option[data-type="bin"] .card-number {
+  color: #4b5563;
+}
+
+.card-option[data-type="bin"] .card-icon {
+  color: #8b5cf6;
+}
+
+/* 完整卡特殊样式 */
+.card-option[data-type="full"] .card-number {
+  color: #111827;
+}
+
+.card-option[data-type="full"] .card-icon {
+  color: #10b981;
+}
+
+/* 选中标记 */
+.card-check {
+  font-size: 16px;
+  color: #1890ff;
+  opacity: 0;
+}
+
+.card-option.selected .card-check {
+  opacity: 1;
+}
+
+/* ==================== 账号表格 ==================== */
+
+/* 下拉菜单 */
+#addAccountMenu > div:hover,
+#quickFilterMenu > div:hover,
+#moreActionsMenu > div:hover {
+  background: #f5f5f7;
+}
+
+#moreActionsMenu > div[onclick*="deleteSelectedAccounts"]:hover {
+  background: #fff2f2;
+}
+
+/* 表格样式 */
+.accounts-table tbody tr {
+  background: white;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+  transition: all 0.2s ease;
+  position: relative;
+}
+
+.accounts-table tbody tr td:first-child {
+  border-top-left-radius: 10px;
+  border-bottom-left-radius: 10px;
+}
+
+.accounts-table tbody tr td:last-child {
+  border-top-right-radius: 10px;
+  border-bottom-right-radius: 10px;
+}
+
+.accounts-table tbody tr:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(0,0,0,0.08);
+  z-index: 1;
+}
+
+.accounts-table td {
+  padding: 12px 8px;
+  font-size: 13px;
+  color: #1d1d1f;
+  border: none;
+  vertical-align: middle;
+  white-space: nowrap;
+}
+
+/* 账号邮箱列 */
+.account-email-cell {
+  font-weight: 500;
+  color: #1d1d1f;
+  font-family: 'SF Mono', SFMono-Regular, ui-monospace, monospace;
+  letter-spacing: -0.3px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  width: 100%;
+}
+
+/* 状态徽章 */
+.badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 4px 10px;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1;
+  white-space: nowrap;
+  transition: all 0.2s;
+}
+
+.badge-type-pro {
+  background: rgba(52, 199, 89, 0.15);
+  color: #1b5e20;
+  border: 1px solid rgba(52, 199, 89, 0.3);
+  font-weight: 700;
+}
+
+.badge-type-trial {
+  background: rgba(0, 122, 255, 0.1);
+  color: #0066cc;
+  border: 1px solid rgba(0, 122, 255, 0.2);
+  font-weight: 600;
+}
+
+/* 首页专用的试用期样式 */
+.badge.badge-type-trial.home-trial {
+  background: #e9ecef !important;
+  color: #212529 !important;
+  border: 1px solid #adb5bd !important;
+  font-weight: 600 !important;
+}
+
+.badge-type-free {
+  background: #f5f5f7;
+  color: #6e6e73;
+  border: 1px solid rgba(0, 0, 0, 0.05);
+}
+
+/* 积分状态 */
+.points-wrapper {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.points-text {
+  font-weight: 600;
+  font-size: 13px;
+}
+
+.points-bar-bg {
+  width: 80px;
+  height: 4px;
+  background: #f0f0f0;
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+.points-bar-fill {
+  height: 100%;
+  border-radius: 2px;
+  transition: width 0.3s ease;
+}
+
+/* 绑卡状态 */
+.badge-card-bound {
+  background: rgba(52, 199, 89, 0.1);
+  color: #34c759;
+  border: 1px solid rgba(52, 199, 89, 0.2);
+}
+
+.badge-card-error {
+  background: rgba(255, 59, 48, 0.1);
+  color: #ff3b30;
+  border: 1px solid rgba(255, 59, 48, 0.2);
+}
+
+.badge-card-none {
+  background: rgba(142, 142, 147, 0.1);
+  color: #8e8e93;
+  border: 1px solid rgba(142, 142, 147, 0.2);
+}
+
+/* 到期时间 */
+.expiry-cell {
+  font-variant-numeric: tabular-nums;
+  color: #6e6e73;
+  font-size: 13px;
+}
+
+.expiry-warning {
+  color: #ff9500;
+  font-weight: 600;
+}
+
+.expiry-expired {
+  color: #ff3b30;
+  font-weight: 600;
+  text-decoration: line-through;
+}
+
+/* 操作按钮 */
+.action-btn {
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  border: none;
+  background: transparent;
+  color: #6e6e73;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.action-btn:hover {
+  background: #f0f0f0;
+  color: #1d1d1f;
+}
+
+.action-btn.primary:hover {
+  background: #e8f2ff;
+  color: #007aff;
+}
+
+/* 操作菜单 */
+.action-menu {
+  display: none;
+  position: absolute;
+  right: 0;
+  top: 100%;
+  margin-top: 4px;
+  background: white;
+  border: 1px solid rgba(0,0,0,0.1);
+  border-radius: 8px;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+  min-width: 140px;
+  z-index: 1000;
+}
+
+.action-menu.show {
+  display: block;
+}
+
+.action-menu-item {
+  padding: 10px 16px;
+  cursor: pointer;
+  font-size: 13px;
+  color: #1d1d1f;
+  border-bottom: 1px solid #f0f0f0;
+  transition: background 0.15s;
+}
+
+.action-menu-item:last-child {
+  border-bottom: none;
+}
+
+.action-menu-item:hover {
+  background: #f5f5f7;
+}
+
+.action-menu-item.danger {
+  color: #ff3b30;
+}
+
+/* 当前登录账号高亮 */
+.accounts-table tbody tr.current-account-row {
+  background: linear-gradient(90deg, rgba(52, 199, 89, 0.1) 0%, rgba(52, 199, 89, 0.05) 100%) !important;
+  border-left: 4px solid #34c759 !important;
+}
+
+.accounts-table tbody tr.current-account-row:hover {
+  background: linear-gradient(90deg, rgba(52, 199, 89, 0.15) 0%, rgba(52, 199, 89, 0.08) 100%) !important;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(52, 199, 89, 0.2);
+}

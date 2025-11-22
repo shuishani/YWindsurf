@@ -1,0 +1,165 @@
+# Dependencies
+node_modules/
+package-lock.json
+yarn.lock
+
+# Build output
+dist/
+!dist/*.bat
+!dist/*.txt
+!dist/README.md
+build/
+out/
+release/
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+windsurf_reset.log
+electron-debug.log
+
+# User data and sensitive files
+accounts.json
+current_login.json
+language.json
+virtual-cards.json
+email-config.json
+settings.json
+user-data/
+userData/
+
+# Database files
+*.db
+*.sqlite
+*.sqlite3
+*.db-journal
+*.db-wal
+*.db-shm
+
+# Electron builder output
+*.dmg
+*.zip
+*.exe
+*.AppImage
+*.deb
+*.rpm
+*.snap
+*.tar.gz
+*.msi
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+.Spotlight-V100
+.Trashes
+.VolumeIcon.icns
+.com.apple.timemachine.donotpresent
+.fseventsd
+.TemporaryItems
+
+# Windows
+Thumbs.db
+Thumbs.db:encryptable
+ehthumbs.db
+ehthumbs_vista.db
+*.stackdump
+[Dd]esktop.ini
+$RECYCLE.BIN/
+*.lnk
+
+# Linux
+*~
+.directory
+.Trash-*
+.nfs*
+
+# IDE and editors
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.sublime-project
+.sublime-workspace
+*.code-workspace
+
+# Environment variables
+.env
+.env.local
+.env.*.local
+.env.production
+
+# Temporary files
+*.tmp
+*.temp
+.cache/
+.npm/
+.yarn/
+
+# Runtime data
+pids/
+*.pid
+*.seed
+*.pid.lock
+
+# Coverage directory used by tools like istanbul
+coverage/
+*.lcov
+.nyc_output/
+
+# Dependency directories
+jspm_packages/
+
+# Optional npm cache directory
+.npm
+
+# Optional eslint cache
+.eslintcache
+
+# Optional REPL history
+.node_repl_history
+
+# Output of 'npm pack'
+*.tgz
+
+# Yarn Integrity file
+.yarn-integrity
+
+# parcel-bundler cache (https://parceljs.org/)
+.parcel-cache/
+
+# Next.js build output
+.next/
+
+# Nuxt.js build / generate output
+.nuxt/
+
+# Storybook build outputs
+.out/
+.storybook-out/
+
+# Temporary folders
+tmp/
+temp/
+
+# OS generated files
+.DS_Store?
+Icon?
+
+# Visual Studio files
+.vs/
+*.suo
+*.user
+*.userosscache
+*.sln.docstates
+
+# Windsurf Tool specific
+*.vscdb*
+sessions.json
+machine-id.txt
+backup/
+logs/

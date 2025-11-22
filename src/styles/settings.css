@@ -1,0 +1,41 @@
+/* 设置页面样式 */
+
+/* 域名列表 */
+.domain-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.domain-tag {
+  background: #f5f5f7;
+  color: #1d1d1f;
+  padding: 6px 12px;
+  border-radius: 6px;
+  font-size: 13px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid #e5e5ea;
+  transition: background 0.2s;
+}
+
+.domain-tag:hover {
+  background: #ebebf0;
+}
+
+.domain-tag button {
+  background: none;
+  border: none;
+  color: #86868b;
+  cursor: pointer;
+  font-size: 14px;
+  padding: 0;
+  line-height: 1;
+  transition: color 0.2s ease;
+}
+
+.domain-tag button:hover {
+  color: #1d1d1f;
+}

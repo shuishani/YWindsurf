@@ -1,0 +1,129 @@
+/* 首页样式 */
+
+/* 系统信息卡片 */
+.system-info-card {
+  background: #f5f5f7;
+  border-radius: 12px;
+  padding: 24px;
+  margin-bottom: 20px;
+  border: 1px solid #e5e5ea;
+}
+
+.system-info-card h2 {
+  font-size: 18px;
+  font-weight: 600;
+  margin-bottom: 16px;
+  color: #1d1d1f;
+}
+
+.system-info-content {
+  font-size: 13px;
+  line-height: 2;
+  color: #1d1d1f;
+}
+
+.system-info-content strong {
+  margin-right: 8px;
+}
+
+.system-info-content span {
+  color: #6e6e73;
+}
+
+#machineId {
+  font-family: monospace;
+  word-break: break-all;
+}
+
+/* 账号信息卡片 */
+.account-info-card {
+  background: #f5f5f7;
+  border-radius: 12px;
+  padding: 24px;
+  margin-bottom: 20px;
+  border: 1px solid #e5e5ea;
+}
+
+.account-info-card h2 {
+  font-size: 18px;
+  font-weight: 600;
+  margin-bottom: 16px;
+  color: #1d1d1f;
+}
+
+.account-type-badge {
+  display: inline-block;
+  padding: 4px 10px;
+  border-radius: 12px;
+  font-size: 11px;
+  font-weight: 500;
+  margin-left: 10px;
+  color: white;
+  background: #34c759;
+}
+
+.days-left-badge {
+  display: inline-block;
+  padding: 4px 10px;
+  border-radius: 12px;
+  font-size: 11px;
+  font-weight: 500;
+  margin-left: 10px;
+  color: white;
+  background: #007aff;
+}
+
+/* 积分进度 */
+.points-display {
+  margin-top: 8px;
+}
+
+.points-value {
+  color: #34c759;
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.points-percent {
+  color: #6e6e73;
+  margin-left: 8px;
+}
+
+.points-progress {
+  margin-top: 8px;
+  width: 100%;
+  height: 8px;
+  background: #e5e5ea;
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.points-progress-bar {
+  height: 100%;
+  background: #34c759;
+  width: 50%;
+  transition: width 0.3s;
+}
+
+/* API Key 显示 */
+.api-key-display {
+  margin-top: 12px;
+}
+
+.api-key-value {
+  color: #6e6e73;
+  font-size: 11px;
+  word-break: break-all;
+  font-family: monospace;
+}
+
+/* 操作按钮组 */
+.home-actions {
+  display: flex;
+  gap: 12px;
+  margin-bottom: 20px;
+}
+
+.home-actions .btn {
+  padding: 10px 20px;
+}

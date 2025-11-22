@@ -1,0 +1,694 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; frame-src https:; img-src 'self' data: https:; connect-src 'self' https:; font-src 'self' https:;">
+  <title>YWindsurf 2.0</title>
+  <!-- 样式文件 -->
+  <link rel="stylesheet" href="../styles/common.css">
+  <link rel="stylesheet" href="../styles/main.css">
+  <link rel="stylesheet" href="../styles/home.css">
+  <link rel="stylesheet" href="../styles/accounts.css">
+  <link rel="stylesheet" href="../styles/settings.css">
+  <script src="../shared/lib/i18n.js"></script>
+</head>
+<body>
+  <div class="container">
+    <!-- 左侧导航栏 -->
+    <div class="sidebar">
+      <div class="sidebar-header">
+        <div class="sidebar-title">YWindsurf</div>
+      </div>
+      
+      <div class="sidebar-nav">
+        <div class="nav-item" onclick="switchTab('home', event)">
+          <span class="nav-icon">🏠</span>
+          <span>首页</span>
+        </div>
+        <div class="nav-item" onclick="switchTab('register', event)">
+          <span class="nav-icon">👥</span>
+          <span>账号管理</span>
+        </div>
+        <div class="nav-item" onclick="switchTab('switch', event)">
+          <span class="nav-icon">💳</span>
+          <span>虚拟卡管理</span>
+        </div>
+        <div class="nav-item" data-tab="settings" onclick="switchTab('settings', event)">
+          <span class="nav-icon">⚙️</span>
+          <span class="nav-label">系统设置</span>
+        </div>
+        <div class="nav-item" onclick="switchTab('logs', event)">
+          <span class="nav-icon">📝</span>
+          <span>系统日志</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- 主内容区 -->
+    <div class="main-content">
+      <!-- 首页 -->
+      <div id="home" class="tab-content active">
+        <div class="content-header">
+          <div class="content-title">首页</div>
+          <div class="content-description">查看系统信息和当前账号状态</div>
+        </div>
+        <div class="content-body">
+          <!-- 系统信息 -->
+          <div style="background: #f5f5f7; border-radius: 12px; padding: 24px; margin-bottom: 20px; border: 1px solid #e5e5ea;">
+            <h2 style="font-size: 18px; font-weight: 600; margin-bottom: 16px; color: #1d1d1f;">系统信息</h2>
+            <div style="font-size: 13px; line-height: 2; color: #1d1d1f;">
+              <div><strong>安装路径：</strong><span id="windsurfPath" style="color: #6e6e73;">检测中...</span></div>
+              <div><strong>扩展版本：</strong><span id="extensionVersion" style="color: #6e6e73;">-</span> <strong style="margin-left: 20px;">软件版本：</strong><span id="softwareVersion" style="color: #6e6e73;">-</span></div>
+              <div><strong>机器码：</strong><span id="machineId" style="color: #6e6e73; font-family: monospace; word-break: break-all;">-</span></div>
+            </div>
+          </div>
+
+          <!-- 本地账号信息 -->
+          <div style="background: #f5f5f7; border-radius: 12px; padding: 24px; margin-bottom: 20px; border: 1px solid #e5e5ea;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
+              <h2 style="font-size: 18px; font-weight: 600; margin: 0; color: #1d1d1f;">本地账号信息</h2>
+              <button class="modern-btn btn-secondary" onclick="refreshSystemInfo(true)">🔄 刷新数据</button>
+            </div>
+            <div id="currentAccountInfo" style="font-size: 13px; line-height: 1.8; color: #1d1d1f;">
+              <div style="margin-bottom: 8px;">
+                <strong style="color: #1d1d1f;">昵称：</strong>
+                <span id="accountName" style="color: #6e6e73;">未登录</span>
+              </div>
+              
+              <div style="margin-bottom: 8px; display: flex; align-items: center;">
+                <strong style="color: #1d1d1f;">邮箱：</strong>
+                <span id="accountEmail" style="color: #6e6e73; margin-left: 4px;">-</span>
+                <span id="accountType" class="badge badge-type-pro" style="display: none; margin-left: 10px;">PRO</span>
+              </div>
+              
+              <div style="margin-bottom: 8px; display: flex; align-items: center;">
+                <strong style="color: #1d1d1f;">试用期：</strong>
+                <span id="daysLeft" class="badge badge-type-trial" style="margin-left: 4px;">-</span>
+              </div>
+              
+              <div style="margin-bottom: 8px;">
+                <strong style="color: #1d1d1f;">到期时间：</strong>
+                <span id="endTime" style="color: #6e6e73;">-</span>
+              </div>
+              
+              <div style="margin-bottom: 8px;">
+                <strong style="color: #1d1d1f;">积分使用：</strong>
+                <span id="accountPoints" style="color: #34c759; font-weight: 600;">0 / 500</span>
+                <span id="pointsPercent" style="color: #86868b; margin-left: 8px; font-size: 12px;">(0%)</span>
+              </div>
+              
+              <div style="width: 100%; height: 6px; background: #e5e5ea; border-radius: 3px; overflow: hidden; margin-bottom: 12px;">
+                <div id="pointsBar" style="height: 100%; background: #34c759; width: 0%; transition: width 0.3s;"></div>
+              </div>
+              
+              <div>
+                <strong style="color: #1d1d1f;">API Key：</strong>
+                <div id="apiKey" style="color: #6e6e73; font-size: 11px; word-break: break-all; font-family: 'SF Mono', Monaco, Consolas, monospace; background: #ffffff; padding: 8px 12px; border-radius: 6px; border: 1px solid #e5e5ea; margin-top: 4px;">-</div>
+              </div>
+            </div>
+          </div>
+
+          <!-- 操作按钮 -->
+          <div style="display: flex; gap: 12px; margin-bottom: 20px;">
+            <button class="modern-btn btn-secondary" onclick="resetMachineId()">🔧 重置机器码</button>
+            <button class="modern-btn btn-secondary" onclick="restoreMachineFile()">📁 恢复机器码</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- 账号管理 -->
+      <div id="register" class="tab-content">
+        <div class="content-header">
+          <div class="content-title">账号管理</div>
+          <div class="content-description">批量注册 Windsurf 账号，管理账号到期时间，支持导入导出</div>
+        </div>
+        <div class="content-body">
+      
+      <div id="accountStats" style="margin-bottom:24px;">
+        <div class="stats-container">
+          <div class="stat-card">
+            <div class="stat-value" id="totalCount">0</div>
+            <div class="stat-label" data-i18n="totalAccounts">总账号数</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-value" id="activeCount">0</div>
+            <div class="stat-label" data-i18n="activeAccounts">可用账号</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-value" id="warningCount">0</div>
+            <div class="stat-label" data-i18n="warningAccounts">即将耗尽</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-value" id="expiredCount">0</div>
+            <div class="stat-label" data-i18n="expiredAccounts">不可用</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 批量操作面板 -->
+      <div class="action-panel">
+        <div class="panel-header">
+          <div class="panel-title">
+            <span>🔧 批量操作</span>
+            <span class="panel-subtitle">注册新账号或为现有账号绑卡</span>
+          </div>
+        </div>
+        
+        <!-- 批量注册行 -->
+        <div class="batch-operation-row">
+          <div class="operation-label">⚡ 批量注册</div>
+          <div class="operation-controls">
+            <div class="compact-control-group">
+              <label>数量</label>
+              <input type="number" id="registerCount" value="1" min="1" max="50" class="compact-input">
+            </div>
+            <div class="compact-control-group">
+              <label>并发</label>
+              <input type="number" id="concurrentCount" value="5" min="1" max="10" class="compact-input">
+            </div>
+            <label class="compact-checkbox">
+              <input type="checkbox" id="autoBindCard" checked>
+              <span>自动绑卡</span>
+            </label>
+            <button class="compact-btn btn-primary" onclick="startBatchRegister()">
+              开始注册
+            </button>
+          </div>
+        </div>
+        
+        <!-- 批量绑卡行 -->
+        <div class="batch-operation-row">
+          <div class="operation-label">💳 批量绑卡</div>
+          <div class="operation-controls">
+            <div class="compact-control-group">
+              <div class="card-selector-wrapper" style="position: relative;">
+                <button class="compact-btn btn-secondary" onclick="toggleCardSelector()" id="selectedCardButton">
+                  选择虚拟卡 ▾
+                </button>
+                <div id="cardSelectorDropdown" class="card-selector-dropdown" style="display: none;">
+                  <!-- 动态加载的卡片选项 -->
+                </div>
+              </div>
+            </div>
+            <button class="compact-btn btn-success" onclick="startBatchBinding()">
+              开始绑卡
+            </button>
+          </div>
+        </div>
+        
+        <!-- 进度和状态显示 -->
+        <div id="registerProgress" style="display:none; margin-top:12px;">
+          <div style="margin-bottom:8px; font-size:12px; color:#86868b; text-align:center;" id="progressText">0%</div>
+          <div class="progress-bar">
+            <div class="progress-fill" id="progressFill"></div>
+          </div>
+          <div id="registerStatus"></div>
+        </div>
+        <div id="switchStatus" style="margin-top:12px;"></div>
+      </div>
+
+      
+      <div class="table-container">
+        <!-- 表格工具栏 -->
+        <div class="table-toolbar" style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px; padding:0 4px;">
+          <div style="display:flex; align-items:center; gap:16px;">
+            <div style="font-size:15px; font-weight:600; color:#1d1d1f;">账号列表</div>
+            <span id="selectedBindCount" style="font-size:13px; color:#86868b;">已选择 0 个账号</span>
+          </div>
+          <div style="display:flex; gap:10px;">
+            <!-- 快速筛选下拉菜单 -->
+            <div class="dropdown" style="position:relative;">
+              <button class="modern-btn btn-secondary" onclick="toggleQuickFilterMenu()">
+                ⚡ 快速筛选 ▾
+              </button>
+              <div id="quickFilterMenu" style="display:none; position:absolute; top:100%; right:0; margin-top:4px; background:white; border:1px solid #e5e5ea; border-radius:10px; box-shadow:0 4px 12px rgba(0,0,0,0.1); min-width:160px; z-index:1000; overflow:hidden;">
+                <div onclick="selectUnboundAccounts(); toggleQuickFilterMenu();" style="padding:10px 16px; cursor:pointer; font-size:13px; border-bottom:1px solid #f5f5f7; transition: background 0.15s;">✅ 未绑卡账号</div>
+                <div onclick="selectAccountsForCleanup(); toggleQuickFilterMenu();" style="padding:10px 16px; cursor:pointer; font-size:13px; border-bottom:1px solid #f5f5f7; transition: background 0.15s;">🗑️ 可清理账号</div>
+                <div onclick="invertSelection(); toggleQuickFilterMenu();" style="padding:10px 16px; cursor:pointer; font-size:13px; transition: background 0.15s;">🔄 反选</div>
+              </div>
+            </div>
+            <!-- 刷新选中按钮 -->
+            <button class="modern-btn btn-secondary" onclick="refreshSelectedAccounts()" title="刷新选中账号的积分数据">
+              🔄 刷新选中
+            </button>
+            
+            <!-- 更多操作下拉菜单 -->
+            <div class="dropdown" style="position:relative;">
+              <button class="modern-btn btn-secondary" onclick="toggleMoreActionsMenu()">
+                更多 ▾
+              </button>
+              <div id="moreActionsMenu" style="display:none; position:absolute; top:100%; right:0; margin-top:4px; background:white; border:1px solid #e5e5ea; border-radius:10px; box-shadow:0 4px 12px rgba(0,0,0,0.1); min-width:150px; z-index:1000; overflow:hidden;">
+                <div onclick="exportSelectedAccounts(); toggleMoreActionsMenu();" style="padding:10px 16px; cursor:pointer; font-size:13px; border-bottom:1px solid #f5f5f7; transition: background 0.15s;">📤 导出选中</div>
+                <div onclick="deleteSelectedAccounts(); toggleMoreActionsMenu();" style="padding:10px 16px; cursor:pointer; font-size:13px; color:#ff3b30; transition: background 0.15s;">🗑️ 删除选中</div>
+              </div>
+            </div>
+            
+            <!-- 添加账号下拉菜单 -->
+            <div class="dropdown" style="position:relative;">
+              <button class="modern-btn btn-secondary" onclick="toggleAddAccountMenu()">
+                ➕ 添加账号 ▾
+              </button>
+              <div id="addAccountMenu" style="display:none; position:absolute; top:100%; right:0; margin-top:4px; background:white; border:1px solid #e5e5ea; border-radius:10px; box-shadow:0 4px 12px rgba(0,0,0,0.1); min-width:150px; z-index:1000; overflow:hidden;">
+                <div onclick="showAddAccountForm(); toggleAddAccountMenu();" style="padding:10px 16px; cursor:pointer; font-size:13px; border-bottom:1px solid #f5f5f7; transition: background 0.15s;">📝 输入账号密码</div>
+                <div onclick="showImportAccountForm(); toggleAddAccountMenu();" style="padding:10px 16px; cursor:pointer; font-size:13px; transition: background 0.15s;">📂 批量导入账号</div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <table class="accounts-table" id="accountsTable">
+          <thead>
+            <tr>
+              <th style="width:40px;">
+                <input type="checkbox" id="selectAllAccounts" onchange="toggleSelectAllAccounts()" title="全选/取消全选">
+              </th>
+              <th>邮箱</th>
+              <th>类型</th>
+              <th>积分</th>
+              <th>绑卡状态</th>
+              <th>到期时间</th>
+              <th>Token 状态</th>
+              <th>操作</th>
+            </tr>
+          </thead>
+          <tbody id="accountsList">
+          </tbody>
+        </table>
+      </div>
+        </div>
+      </div>
+
+      <!-- 虚拟卡管理 -->
+      <div id="switch" class="tab-content">
+        <div class="content-header">
+          <div class="content-title">虚拟卡管理</div>
+          <div class="content-description">管理虚拟信用卡信息，支持批量导入导出</div>
+        </div>
+        <div class="content-body">
+          
+          <!-- BIN卡头管理区 -->
+          <div class="table-container" style="margin-bottom: 16px; padding-bottom: 0;">
+            <div class="table-toolbar" style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px; padding:0 4px;">
+              <div style="display:flex; align-items:center; gap:12px;">
+                <div style="font-size:15px; font-weight:600; color:#1d1d1f;">🎲 BIN卡头列表</div>
+                <span style="font-size:13px; color:#86868b;">绑卡时自动随机生成完整卡号</span>
+              </div>
+              <div style="display:flex; gap:10px;">
+                <button class="modern-btn btn-secondary" onclick="showImportBinsForm()">📂 导入</button>
+                <button class="modern-btn btn-secondary" onclick="exportBins()">📤 导出</button>
+                <button class="modern-btn btn-secondary" onclick="showBinForm()">➕ 添加</button>
+              </div>
+            </div>
+            
+            <table class="accounts-table">
+              <thead>
+                <tr>
+                  <th>BIN卡头</th>
+                  <th>绑定次数</th>
+                  <th>备注</th>
+                  <th style="width: 100px;">操作</th>
+                </tr>
+              </thead>
+              <tbody id="binsList">
+              </tbody>
+            </table>
+          </div>
+
+          <!-- 完整卡管理区 -->
+          <div class="table-container">
+            <div class="table-toolbar" style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px; padding:0 4px;">
+              <div style="display:flex; align-items:center; gap:12px;">
+                <div style="font-size:15px; font-weight:600; color:#1d1d1f;">🎴 完整卡列表</div>
+                <span style="font-size:13px; color:#86868b;">完整虚拟卡信息（包括从BIN生成的卡）</span>
+              </div>
+              <div style="display:flex; gap:10px;">
+                <button class="modern-btn btn-secondary" onclick="showImportCardsForm()">📂 导入</button>
+                <button class="modern-btn btn-secondary" onclick="exportCards()">📤 导出</button>
+                <button class="modern-btn btn-secondary" onclick="showCardForm()">➕ 添加</button>
+              </div>
+            </div>
+
+            <table class="accounts-table">
+              <thead>
+                <tr>
+                  <th>卡号</th>
+                  <th>过期日期</th>
+                  <th>CVV</th>
+                  <th>余额 (USD)</th>
+                  <th>绑定次数</th>
+                  <th>备注</th>
+                  <th style="width: 100px;">操作</th>
+                </tr>
+              </thead>
+              <tbody id="cardsList">
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <!-- 系统日志 -->
+      <div id="logs" class="tab-content">
+        <div class="content-header">
+          <div class="content-title">📝 系统日志</div>
+          <div class="content-description">查看系统运行日志和操作记录</div>
+        </div>
+        <div class="content-body">
+          <div style="display: flex; justify-content: flex-end; gap: 12px; margin-bottom: 16px;">
+            <button class="modern-btn btn-secondary" onclick="clearLogs()">清空日志</button>
+          </div>
+          <div id="logContainer" style="background: #f8f9fa; border: 1px solid #e5e5ea; border-radius: 8px; padding: 20px; min-height: 500px; max-height: 70vh; overflow-y: auto; font-family: 'SF Mono', Monaco, Consolas, monospace; font-size: 13px; line-height: 1.8; color: #1d1d1f;">
+            <!-- 日志将通过JavaScript动态添加 -->
+          </div>
+        </div>
+      </div>
+
+      <!-- 配置 -->
+      <div id="settings" class="tab-content">
+        <div class="content-header">
+          <div class="content-title">系统设置</div>
+          <div class="content-description">配置 IMAP 邮箱用于接收注册验证码</div>
+        </div>
+        <div class="content-body">
+          <div class="form-group">
+            <label data-i18n="emailDomainList">邮箱域名列表（用于生成注册邮箱）</label>
+            <input type="text" id="newDomain" data-i18n-placeholder="domainInputPlaceholder" placeholder="输入域名，如: example.com">
+            <button class="btn btn-primary" onclick="addDomain()" style="margin-top:10px;" data-i18n="addDomainBtn">添加域名</button>
+          </div>
+          
+          <div class="domain-list" id="domainList"></div>
+          
+          <hr style="margin: 30px 0;">
+          
+          <h3 data-i18n="imapConfigTitle">IMAP邮箱配置（用于接收验证码）</h3>
+          <div class="form-group">
+            <label data-i18n="imapServer">IMAP服务器</label>
+            <input type="text" id="imapHost" data-i18n-placeholder="imapHostPlaceholder" placeholder="imap.example.com">
+          </div>
+          <div class="form-group">
+            <label data-i18n="port">端口</label>
+            <input type="number" id="imapPort" value="993">
+          </div>
+          <div class="form-group">
+            <label data-i18n="emailAccount">邮箱账号</label>
+            <input type="email" id="imapUser" data-i18n-placeholder="emailPlaceholder" placeholder="your@example.com">
+          </div>
+          <div class="form-group">
+            <label data-i18n="password">密码</label>
+            <input type="password" id="imapPassword">
+            <p style="font-size: 11px; color: #86868b; margin-top: 6px;">💡 提示：密码就是授权码（如 Gmail 需要使用应用专用密码）</p>
+          </div>
+          
+          <button class="btn btn-primary" onclick="testImap()" data-i18n="testConnection" title="测试成功后会自动保存配置">测试连接</button>
+          <button class="btn btn-success" onclick="saveSettings()" data-i18n="saveConfig" title="手动保存当前配置">保存配置</button>
+          
+          <div id="settingsStatus" style="margin-top: 16px;"></div>
+          
+          <hr style="margin: 30px 0;">
+          
+          <h2 data-i18n="languageSettings">语言设置</h2>
+          <div class="form-group">
+            <label data-i18n="selectLanguage">选择语言</label>
+            <select id="languageSelect" onchange="changeLanguage()" style="width: 200px;">
+              <option value="zh-CN">简体中文</option>
+              <option value="en">English</option>
+            </select>
+          </div>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- 手动添加账号弹窗 -->
+  <div id="addAccountModal" class="modal-overlay">
+    <div class="modal-dialog">
+      <div class="modal-header" data-i18n="addAccountTitle">添加账号</div>
+      <div class="form-group">
+        <label data-i18n="email">邮箱</label>
+        <input type="email" id="manualEmail">
+      </div>
+      <div class="form-group" style="margin-bottom:0;">
+        <label data-i18n="password">密码</label>
+        <input type="password" id="manualPassword">
+      </div>
+      <div class="modal-footer">
+        <button class="btn" onclick="hideAddAccountForm()" data-i18n="cancel">取消</button>
+        <button class="btn btn-success" onclick="addManualAccount()" data-i18n="add">添加</button>
+      </div>
+    </div>
+  </div>
+  <!-- 导入账号弹窗 -->
+  <div id="importAccountModal" class="modal-overlay">
+    <div class="modal-dialog">
+      <div class="modal-header" data-i18n="importAccountsTitle">导入账号</div>
+      <div class="status-message status-info" style="margin: 0 0 16px 0; padding: 10px 12px; font-size: 12px;">
+        <strong>📋 格式说明：</strong><br>
+        • 仅支持 JSON 格式<br>
+        • 格式：<code>{"accounts": [{"email": "邮箱", "password": "密码"}]}</code><br>
+        • 示例：<code>{"accounts": [{"email": "123@qq.com", "password": "abc123"}]}</code>
+      </div>
+      <div class="form-group">
+        <label data-i18n="selectFile">选择文件</label>
+        <input type="file" id="importFile" accept=".json" style="padding: 6px;">
+      </div>
+      <div class="form-group" style="margin-bottom:0;">
+        <label>预览内容</label>
+        <textarea id="importPreview" readonly style="min-height: 150px; font-family: monospace; font-size: 12px; resize: vertical;" placeholder="选择文件后将显示预览..."></textarea>
+      </div>
+      <div id="importResult" style="margin-top: 12px;"></div>
+      <div class="modal-footer">
+        <button class="btn" onclick="hideImportAccountForm()" data-i18n="cancel">取消</button>
+        <button class="btn btn-success" onclick="importAccounts()" data-i18n="import">导入</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 添加/编辑完整卡模态框 -->
+  <div id="cardFormModal" class="modal-overlay">
+    <div class="modal-dialog" style="max-width:450px;">
+      <div class="modal-header" id="cardFormTitle">添加完整卡</div>
+      
+      <div class="form-group">
+        <label>卡号 *</label>
+        <input type="text" id="cardNumber" placeholder="5447685740496193" maxlength="19">
+      </div>
+      <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px;">
+        <div class="form-group">
+          <label>过期日期 * (MM/YY)</label>
+          <input type="text" id="cardExpDate" placeholder="10/27" maxlength="5">
+        </div>
+        <div class="form-group">
+          <label>CVV *</label>
+          <input type="text" id="cardCvv" placeholder="842" maxlength="4">
+        </div>
+      </div>
+      <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px;">
+        <div class="form-group">
+          <label>余额 (USD)</label>
+          <input type="number" id="cardBalance" placeholder="10.00" step="0.01" min="0">
+        </div>
+        <div class="form-group">
+          <label>绑定次数</label>
+          <select id="cardBindCount" style="width:100%; padding:10px 12px; border:1px solid #d2d2d7; border-radius:6px; font-size:14px;">
+            <option value="0">0 次</option>
+            <option value="1">1 次</option>
+            <option value="2">2 次</option>
+            <option value="3">3 次</option>
+            <option value="4">4 次</option>
+            <option value="5">5 次</option>
+          </select>
+        </div>
+      </div>
+      <div class="form-group">
+        <label>备注</label>
+        <input type="text" id="cardNote" placeholder="订阅用途">
+      </div>
+      <div id="cardFormError" style="color:#ff3b30; font-size:12px; margin-top:8px;"></div>
+      <div class="modal-footer">
+        <button class="btn" onclick="hideCardForm()">取消</button>
+        <button class="btn btn-primary" onclick="saveCard()">保存</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 导入虚拟卡模态框 -->
+  <div id="importCardsModal" class="modal-overlay">
+    <div class="modal-dialog" style="max-width:500px;">
+      <div class="modal-header">📂 导入虚拟卡</div>
+      <div class="status-message status-info" style="margin:0 0 16px 0; padding:12px; font-size:12px; line-height:1.6;">
+        <strong>📋 格式说明：</strong><br>
+        • 每行一张卡：<code>卡号 过期日期(MMYY) CVV [绑定次数]</code><br>
+        • 示例：<code>5447685740496193 1027 842</code> 或 <code>5447685740496193 1027 842 2</code><br>
+        • 绑定次数为可选参数，不填默认为0次
+      </div>
+      <div class="form-group">
+        <label>选择 TXT 文件</label>
+        <input type="file" id="importCardsFile" accept=".txt" style="padding:8px; border:2px dashed #d2d2d7; border-radius:6px; background:#f8f9fa;">
+      </div>
+      <div class="form-group" style="margin-bottom:0;">
+        <label>预览内容</label>
+        <textarea id="importCardsPreview" readonly style="min-height:180px; font-family:'Courier New',monospace; font-size:12px; resize:vertical; background:#f8f9fa;" placeholder="选择文件后将显示预览..."></textarea>
+      </div>
+      <div id="importCardsResult" style="margin-top:12px;"></div>
+      <div class="modal-footer">
+        <button class="btn" onclick="hideImportCardsForm()">取消</button>
+        <button class="btn btn-success" onclick="importCards()">开始导入</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 添加/编辑BIN卡头模态框 -->
+  <div id="binFormModal" class="modal-overlay">
+    <div class="modal-dialog" style="max-width:450px;">
+      <div class="modal-header" id="binFormTitle">添加BIN卡头</div>
+      
+      <div class="form-group">
+        <label>BIN卡头 *</label>
+        <input type="text" id="binNumber" placeholder="538841xxxxxxxxxx" maxlength="16">
+        <div style="font-size:12px; color:#86868b; margin-top:4px;">
+          使用 'x' 表示随机数字，如：538841xxxxxxxxxx
+        </div>
+      </div>
+      <div class="form-group">
+        <label>备注</label>
+        <input type="text" id="binNote" placeholder="用途说明">
+      </div>
+      <div id="binFormError" style="color:#ff3b30; font-size:12px; margin-top:8px;"></div>
+      <div class="modal-footer">
+        <button class="btn" onclick="hideBinForm()">取消</button>
+        <button class="btn btn-primary" onclick="saveBin()">保存</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 导入BIN卡头模态框 -->
+  <div id="importBinsModal" class="modal-overlay">
+    <div class="modal-dialog" style="max-width:500px;">
+      <div class="modal-header">📂 导入BIN卡头</div>
+      <div class="status-message status-info" style="margin:0 0 16px 0; padding:12px; font-size:12px; line-height:1.6;">
+        <strong>📋 格式说明：</strong><br>
+        • 每行一个BIN：<code>BIN卡头 备注(可选)</code><br>
+        • 示例：<code>538841xxxxxxxxxx 测试用途</code>
+      </div>
+      <div class="form-group">
+        <label>选择 TXT 文件</label>
+        <input type="file" id="importBinsFile" accept=".txt" style="padding:8px; border:2px dashed #d2d2d7; border-radius:6px; background:#f8f9fa;">
+      </div>
+      <div class="form-group" style="margin-bottom:0;">
+        <label>预览内容</label>
+        <textarea id="importBinsPreview" readonly style="min-height:180px; font-family:'Courier New',monospace; font-size:12px; resize:vertical; background:#f8f9fa;" placeholder="选择文件后将显示预览..."></textarea>
+      </div>
+      <div id="importBinsResult" style="margin-top:12px;"></div>
+      <div class="modal-footer">
+        <button class="btn" onclick="hideImportBinsForm()">取消</button>
+        <button class="btn btn-success" onclick="importBins()">开始导入</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 注册日志窗口 -->
+  <div id="registrationLogModal" class="modal-overlay" style="display:none;">
+    <div class="modal-dialog" style="max-width:800px; max-height:80vh; display:flex; flex-direction:column;">
+      <div class="modal-header" style="display:flex; justify-content:center; align-items:center;">
+        <span>📝 批量注册进度</span>
+      </div>
+      
+      <!-- 进度条 -->
+      <div style="padding:0 20px 16px 20px;">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+          <span style="font-size:13px; color:#1d1d1f; font-weight:600;">总体进度</span>
+          <span id="regProgressText" style="font-size:12px; color:#86868b;">0/0</span>
+        </div>
+        <div style="width:100%; height:8px; background:#e5e5ea; border-radius:4px; overflow:hidden;">
+          <div id="regProgressBar" style="height:100%; background:#007aff; width:0%; transition:width 0.3s;"></div>
+        </div>
+      </div>
+      
+      <!-- 日志内容 -->
+      <div style="flex:1; overflow-y:auto; padding:0 20px 20px 20px; min-height:300px;">
+        <div id="registrationLogContent" style="background:#f8f9fa; border:1px solid #e5e5ea; border-radius:6px; padding:16px; font-family:'SF Mono', Monaco, Consolas, monospace; font-size:12px; line-height:1.8; color:#1d1d1f; white-space:pre-wrap; word-break:break-word;">
+          <div style="color:#86868b;">等待开始注册...</div>
+        </div>
+      </div>
+      
+      <div class="modal-footer" style="display:flex; gap:12px; justify-content:flex-end;">
+        <button id="cancelRegBtn" class="btn btn-danger" onclick="cancelRegistration()" style="display:none;">取消注册</button>
+        <button id="closeRegBtn" class="btn btn-primary" onclick="hideRegistrationLog()">关闭</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 绑卡日志窗口 -->
+  <div id="bindingLogModal" class="modal-overlay" style="display:none;">
+    <div class="modal-dialog" style="max-width:1400px; max-height:85vh; display:flex; flex-direction:column;">
+      <div class="modal-header" style="display:flex; justify-content:space-between; align-items:center;">
+        <span>💳 批量绑卡进度</span>
+        <button onclick="hideBindingLog()" style="background:none; border:none; cursor:pointer; font-size:20px; color:#6e6e73; padding:0; line-height:1;" title="关闭">×</button>
+      </div>
+      
+      <!-- 进度条 -->
+      <div style="padding:0 20px 16px 20px;">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+          <span style="font-size:13px; color:#1d1d1f; font-weight:600;">总体进度</span>
+          <span id="bindProgressText" style="font-size:12px; color:#86868b;">0/0</span>
+        </div>
+        <div style="width:100%; height:8px; background:#e5e5ea; border-radius:4px; overflow:hidden;">
+          <div id="bindProgressBar" style="height:100%; background:#34c759; width:0%; transition:width 0.3s;"></div>
+        </div>
+      </div>
+      
+      <!-- 日志内容 -->
+      <div style="flex:1; overflow-y:auto; padding:0 20px 20px 20px; min-height:300px; max-height:calc(85vh - 200px);">
+        <div id="bindingLogContent" style="background:#f8f9fa; border:1px solid #e5e5ea; border-radius:6px; padding:16px; font-family:'SF Mono', Monaco, Consolas, monospace; font-size:12px; line-height:1.8; color:#1d1d1f; white-space:pre-wrap; word-break:break-word;">
+          <div style="color:#86868b;">等待开始绑卡...</div>
+        </div>
+      </div>
+      
+      <div class="modal-footer" style="display:flex; gap:12px; justify-content:space-between; align-items:center;">
+        <div style="display:flex; gap:8px;">
+          <button onclick="confirmCurrentBindSuccess()" style="background:#34c759; color:white; border:none; padding:8px 16px; border-radius:6px; cursor:pointer; font-size:13px; font-weight:600;">✅ 绑卡成功</button>
+          <button onclick="retryCurrentBinding()" style="background:#007aff; color:white; border:none; padding:8px 16px; border-radius:6px; cursor:pointer; font-size:13px; font-weight:600;">🔄 重新绑卡</button>
+        </div>
+        <button class="btn btn-primary" onclick="hideBindingLog()">关闭</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 切号日志窗口 -->
+  <div id="switchLogModal" class="modal-overlay" style="display:none;">
+    <div class="modal-dialog" style="max-width:600px; max-height:70vh; display:flex; flex-direction:column;">
+      <div class="modal-header" style="display:flex; justify-content:space-between; align-items:center;">
+        <span>🔄 账号切换进度</span>
+        <button onclick="hideSwitchLog()" style="background:none; border:none; cursor:pointer; font-size:20px; color:#6e6e73; padding:0; line-height:1;" title="关闭">×</button>
+      </div>
+      
+      <!-- 切换信息 -->
+      <div style="padding:0 20px 16px 20px;">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+          <span style="font-size:13px; color:#1d1d1f; font-weight:600;">切换状态</span>
+          <span id="switchStatusText" style="font-size:12px; color:#86868b;">准备中...</span>
+        </div>
+        <div style="width:100%; height:6px; background:#e5e5ea; border-radius:3px; overflow:hidden;">
+          <div id="switchProgressBar" style="height:100%; background:#007aff; width:0%; transition:width 0.5s;"></div>
+        </div>
+      </div>
+      
+      <!-- 日志内容 -->
+      <div style="flex:1; overflow-y:auto; padding:0 20px 20px 20px; min-height:250px;">
+        <div id="switchLogContent" style="background:#f8f9fa; border:1px solid #e5e5ea; border-radius:6px; padding:16px; font-family:'SF Mono', Monaco, Consolas, monospace; font-size:12px; line-height:1.8; color:#1d1d1f; white-space:pre-wrap; word-break:break-word;">
+          <div style="color:#86868b;">等待开始切换...</div>
+        </div>
+      </div>
+      
+      <div class="modal-footer" style="display:flex; gap:12px; justify-content:flex-end;">
+        <button id="closeSwitchBtn" class="btn btn-primary" onclick="hideSwitchLog()">关闭</button>
+      </div>
+    </div>
+  </div>
+
+
+  <!-- 模块化渲染进程 -->
+  <script src="app.js"></script>
+</body>
+</html>

@@ -1,0 +1,8 @@
+{
+  "latestVersion": "2.0.0",
+  "forceUpdate": false,
+  "forceStop": false,
+  "stopMessage": "软件已停用，请联系作者获取最新版本",
+  "updateMessage": "检测到新版本，必须更新后才能继续使用！",
+  "contactQQ": "1815578857"
+}
