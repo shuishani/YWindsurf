@@ -902,7 +902,7 @@ function showConfirmDialog(title, message, onConfirm, onCancel = null) {
   dialog.innerHTML = `
     <div style="margin-bottom: 20px;">
       <h3 style="margin: 0 0 12px 0; color: #1d1d1f; font-size: 18px;">${title}</h3>
-      <p style="margin: 0; color: #424245; line-height: 1.5;">${message}</p>
+      <p style="margin: 0; color: #424245; line-height: 1.5; white-space: pre-line;">${message}</p>
     </div>
     
     <div style="display: flex; gap: 12px;">
@@ -1920,6 +1920,186 @@ ipcRenderer.on('switch-progress', (event, progress) => {
   updateSwitchProgress(progress.current, progress.total, progress.status);
 });
 
+// ==================== 批量取消订阅 ====================
+
+// 显示取消订阅日志窗口
+function showCancelLog() {
+  const modal = document.getElementById('cancelLogModal');
+  if (modal) {
+    modal.style.display = 'flex';
+    // 清空之前的日志
+    const logContent = document.getElementById('cancelLogContent');
+    if (logContent) {
+      logContent.innerHTML = '<div style="color:#86868b;">准备开始取消订阅...</div>';
+    }
+    // 重置进度
+    updateCancelProgress(0, 0, 0, 0);
+    // 显示取消按钮
+    const cancelBtn = document.getElementById('cancelCancelBtn');
+    if (cancelBtn) cancelBtn.style.display = 'inline-block';
+  }
+}
+
+// 隐藏取消订阅日志窗口
+function hideCancelLog() {
+  const modal = document.getElementById('cancelLogModal');
+  if (modal) {
+    modal.style.display = 'none';
+  }
+  // 隐藏取消按钮
+  const cancelBtn = document.getElementById('cancelCancelBtn');
+  if (cancelBtn) cancelBtn.style.display = 'none';
+}
+
+// 添加取消订阅日志
+function addCancelLog(message, type = 'info') {
+  const logContent = document.getElementById('cancelLogContent');
+  if (!logContent) return;
+  
+  // 如果 message 是对象，提取 message 字段
+  if (typeof message === 'object' && message.message) {
+    message = message.message;
+  }
+  
+  // 确保 message 是字符串
+  if (typeof message !== 'string') {
+    message = String(message);
+  }
+  
+  let color = '#1d1d1f';
+  if (type === 'success' || message.includes('成功') || message.includes('完成') || message.includes('✅')) {
+    color = '#34c759';
+  } else if (type === 'error' || message.includes('失败') || message.includes('错误') || message.includes('异常') || message.includes('❌')) {
+    color = '#ff3b30';
+  } else if (type === 'warning' || message.includes('警告') || message.includes('注意') || message.includes('⚠️')) {
+    color = '#ff9500';
+  } else if (type === 'info' || message.includes('开始') || message.includes('正在') || message.includes('🚀') || message.includes('📋')) {
+    color = '#007aff';
+  }
+  
+  const logLine = document.createElement('div');
+  logLine.style.cssText = `color: ${color}; word-wrap: break-word; margin-bottom: 2px;`;
+  logLine.textContent = message;
+  
+  logContent.appendChild(logLine);
+  
+  // 自动滚动到底部
+  logContent.scrollTop = logContent.scrollHeight;
+}
+
+// 更新取消订阅进度
+function updateCancelProgress(completed, total, succeeded, failed) {
+  const progressText = document.getElementById('cancelProgressText');
+  const progressBar = document.getElementById('cancelProgressBar');
+  
+  if (progressText) {
+    progressText.textContent = `${completed}/${total} (成功: ${succeeded}, 失败: ${failed})`;
+  }
+  
+  if (progressBar && total > 0) {
+    const percentage = (completed / total) * 100;
+    progressBar.style.width = `${percentage}%`;
+  }
+}
+
+// 开始批量取消订阅
+async function startBatchCancel() {
+  try {
+    // 1. 获取选中的账号
+    const selectedAccounts = getSelectedAccounts();
+    
+    // 2. 验证
+    if (selectedAccounts.length === 0) {
+      showToast('请先选择要取消订阅的账号', 'warning');
+      return;
+    }
+    
+    // 验证账号是否有密码
+    const accountsWithoutPassword = selectedAccounts.filter(acc => !acc.password);
+    if (accountsWithoutPassword.length > 0) {
+      showToast(`有 ${accountsWithoutPassword.length} 个账号没有保存密码，无法取消订阅`, 'error');
+      return;
+    }
+    
+    // 3. 确认操作
+    const confirmMsg = `确定要取消 ${selectedAccounts.length} 个账号的订阅吗？
+
+此操作将：
+• 取消自动续费
+• 订阅到期后不再续订`;
+    
+    showConfirmDialog(
+      '批量取消订阅',
+      confirmMsg,
+      async () => {
+        // 4. 显示日志窗口
+        showCancelLog();
+        
+        // 5. 根据选中账号数量设置并发数（最大5）
+        const concurrent = Math.min(selectedAccounts.length, 5);
+        
+        // 6. 调用 IPC（后端 logger 会自动发送日志到窗口）
+        const result = await ipcRenderer.invoke('batch-cancel-subscription', {
+          accounts: selectedAccounts,
+          concurrent: concurrent
+        });
+        
+        // 7. 处理结果
+        if (result.success) {
+          showToast(`取消完成：成功 ${result.succeeded} 个，失败 ${result.failed} 个`, 'success');
+          
+          // 刷新账号列表
+          setTimeout(() => {
+            loadAccounts();
+          }, 2000);
+        } else {
+          showToast('批量取消失败', 'error');
+        }
+        
+        // 隐藏取消按钮
+        const cancelBtn = document.getElementById('cancelCancelBtn');
+        if (cancelBtn) cancelBtn.style.display = 'none';
+      }
+    );
+    
+  } catch (error) {
+    console.error('批量取消订阅异常:', error);
+    showToast(`取消订阅异常: ${error.message}`, 'error');
+  }
+}
+
+// 取消当前取消订阅操作
+async function cancelCancelOperation() {
+  try {
+    const result = await ipcRenderer.invoke('cancel-subscription-operation');
+    if (result.success) {
+      showToast('取消请求已发送', 'info');
+    } else {
+      showToast(result.message || '取消失败', 'error');
+    }
+  } catch (error) {
+    console.error('取消操作失败:', error);
+    showToast('取消操作失败', 'error');
+  }
+}
+
+// 监听取消订阅日志
+ipcRenderer.on('cancel-log', (event, log) => {
+  const message = typeof log === 'object' && log.message ? log.message : log;
+  addCancelLog(message, 'info');
+});
+
+// 监听取消订阅进度
+ipcRenderer.on('cancel-progress', (event, progress) => {
+  updateCancelProgress(
+    progress.completed || 0,
+    progress.total || 0,
+    progress.succeeded || 0,
+    progress.failed || 0
+  );
+  
+});
+
 // 导出模块并暴露到全局
 const accountsModule = {
   loadAccounts,
@@ -1969,7 +2149,13 @@ const accountsModule = {
   getSelectedCardId,
   hideBindingLog,
   confirmCurrentBindSuccess,
-  retryCurrentBinding
+  retryCurrentBinding,
+  startBatchCancel,
+  showCancelLog,
+  hideCancelLog,
+  addCancelLog,
+  updateCancelProgress,
+  cancelCancelOperation
 };
 
 Object.assign(window, accountsModule);

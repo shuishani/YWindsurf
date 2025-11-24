@@ -4,12 +4,24 @@ const { FuseV1Options, FuseVersion } = require('@electron/fuses');
 module.exports = {
   packagerConfig: {
     asar: true,
+    name: 'YWindsurf',
+    executableName: 'YWindsurf',
   },
   rebuildConfig: {},
   makers: [
     {
-      name: '@electron-forge/maker-squirrel',
-      config: {},
+      name: '@electron-forge/maker-nsis',
+      config: {
+        name: 'YWindsurf',
+        setupExe: 'YWindsurf-Setup.exe',
+        oneClick: false,
+        allowToChangeInstallationDirectory: true,
+        license: 'LICENSE.txt',
+        displayLanguageSelector: false,
+        installerLanguages: ['zh_CN'],
+        createDesktopShortcut: true,
+        createStartMenuShortcut: true
+      },
     },
   ],
   plugins: [

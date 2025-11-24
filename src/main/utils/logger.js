@@ -57,7 +57,7 @@ class Logger {
    * 获取任务标识
    */
   getTaskPrefix() {
-    return this.taskId ? `[任务${this.taskId}] ` : '';
+    return this.taskId ? `[任务${this.taskId}]` : '';
   }
 
   /**
@@ -101,8 +101,8 @@ class Logger {
     const message = this.formatMessage(type, step, action, details);
     const timestamp = `[${this.getTimestamp()}] `;
     const taskPrefix = this.getTaskPrefix();
-    const tagPrefix = tag ? `[${tag}] ` : '';
-    const fullMessage = `${timestamp}${taskPrefix}${tagPrefix}${message}`;
+    const tagPrefix = tag ? `[${tag}]${taskPrefix} ` : (taskPrefix ? `${taskPrefix} ` : '');
+    const fullMessage = `${timestamp}${tagPrefix}${message}`;
     
     // 开发模式：输出到控制台
     if (this.isDevelopment()) {
@@ -120,8 +120,8 @@ class Logger {
     const message = this.formatMessage('error', null, action, details);
     const timestamp = `[${this.getTimestamp()}] `;
     const taskPrefix = this.getTaskPrefix();
-    const tagPrefix = tag ? `[${tag}] ` : '';
-    const fullMessage = `${timestamp}${taskPrefix}${tagPrefix}${message}`;
+    const tagPrefix = tag ? `[${tag}]${taskPrefix} ` : (taskPrefix ? `${taskPrefix} ` : '');
+    const fullMessage = `${timestamp}${tagPrefix}${message}`;
     
     // 开发模式：输出到控制台
     if (this.isDevelopment()) {
@@ -158,15 +158,15 @@ class Logger {
           const eventMap = {
             '批量绑卡': 'binding-log',
             '批量注册': 'registration-log',
-            '切号': 'switch-log'
+            '切号': 'switch-log',
+            '取消订阅': 'cancel-log'
           };
           
           const eventName = eventMap[tag];
           if (eventName) {
-            // 移除标签部分,只保留时间戳+任务ID+消息
-            const messageWithoutTag = fullMessage.replace(`[${tag}] `, '');
+            // 直接发送完整消息，前端会处理显示格式
             mainWindow.webContents.send(eventName, {
-              message: messageWithoutTag
+              message: fullMessage
             });
           }
         }

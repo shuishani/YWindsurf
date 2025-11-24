@@ -25,6 +25,10 @@ function registerAllIPC(app, mainWindow) {
   // 注册状态管理
   let currentRegistrationBot = null;
   let shouldCancelRegistration = false;
+  
+  // 取消订阅状态管理
+  let currentCanceller = null;
+  let shouldCancelSubscription = false;
 
   // 注册首页IPC
   registerHomeIPC(app);
@@ -204,6 +208,47 @@ function registerAllIPC(app, mainWindow) {
       return { success: true, message: '取消请求已发送' };
     } else {
       return { success: false, message: '没有正在进行的注册' };
+    }
+  });
+
+  // 批量取消订阅
+  ipcMain.handle('batch-cancel-subscription', async (event, config) => {
+    const SubscriptionCanceller = require('./services/subscription-canceller');
+    const canceller = new SubscriptionCanceller();
+    
+    // 保存当前实例
+    currentCanceller = canceller;
+    shouldCancelSubscription = false;
+    
+    // 设置取消检查函数
+    canceller.setCancelChecker(() => shouldCancelSubscription);
+    
+    try {
+      const result = await canceller.batchCancel(
+        config.accounts,
+        (progress) => {
+          mainWindow.webContents.send('cancel-progress', progress);
+        },
+        null, // logCallback 不再需要，logger 会自动发送
+        config.concurrent || 3
+      );
+      
+      return result;
+    } finally {
+      // 清理状态
+      currentCanceller = null;
+      shouldCancelSubscription = false;
+    }
+  });
+
+  // 取消订阅操作
+  ipcMain.handle('cancel-subscription-operation', async () => {
+    if (currentCanceller) {
+      shouldCancelSubscription = true;
+      mainWindow.webContents.send('cancel-log', '⚠️ 正在取消操作...');
+      return { success: true, message: '取消请求已发送' };
+    } else {
+      return { success: false, message: '没有正在进行的取消订阅操作' };
     }
   });
 
