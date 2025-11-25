@@ -3,8 +3,7 @@
  */
 
 const { ipcRenderer } = require('electron');
-const path = require('path');
-const { addLog, showToast } = require('../utils/utils');
+const { showToast, formatDateTime, handleError, applyDaysLeftStyle, getDaysLeftStyleString, processAccountCredits, addLog } = require('../utils/utils');
 
 // 刷新系统信息
 async function refreshSystemInfo(showNotification = false) {
@@ -30,6 +29,7 @@ async function refreshSystemInfo(showNotification = false) {
     const pointsPercent = document.getElementById('pointsPercent');
     const pointsBar = document.getElementById('pointsBar');
     const daysLeft = document.getElementById('daysLeft');
+    const startTime = document.getElementById('startTime');
     const endTime = document.getElementById('endTime');
     const apiKey = document.getElementById('apiKey');
     
@@ -43,101 +43,69 @@ async function refreshSystemInfo(showNotification = false) {
       if (accountName) accountName.textContent = info.currentAccount.name || '未知';
       if (accountEmail) accountEmail.textContent = info.currentAccount.email || '未登录';
       
-      // 账号类型 - 根据积分限额判断
+      // 使用统一的积分和PRO账号处理函数
+      const creditsInfo = processAccountCredits(
+        info.currentAccount.usedPromptCredits,
+        info.currentAccount.monthlyPromptCredits
+      );
+      
+      // 账号类型显示
       if (accountType) {
-        const credits = info.currentAccount.monthlyPromptCredits || 0;
-        let typeText = 'Free';
-        let typeClass = 'badge-type-free';
-        
-        if (credits >= 500) {
-          typeText = 'PRO';
-          typeClass = 'badge-type-pro';
-        } else if (credits === 100) {
-          typeText = 'Trial';
-          typeClass = 'badge-type-trial';
-        } else if (credits === 25) {
-          typeText = 'Free';
-          typeClass = 'badge-type-free';
-        }
-        
-        accountType.textContent = typeText;
-        accountType.className = `badge ${typeClass}`;
-        if (typeClass === 'badge-type-trial') {
+        accountType.textContent = creditsInfo.accountType;
+        accountType.className = `badge ${creditsInfo.typeClass}`;
+        if (creditsInfo.typeClass === 'badge-type-trial') {
           accountType.className += ' home-trial'; // 首页试用期使用特殊样式
         }
         accountType.style.display = 'inline-block';
-        // 移除内联背景色，使用CSS类
         accountType.style.background = '';
       }
       
-      // 积分信息
-      const used = info.currentAccount.usedPromptCredits || 0;
-      const total = info.currentAccount.monthlyPromptCredits || 500;
-      const percent = total > 0 ? Math.round((used / total) * 100) : 0;
-      
-      // 根据使用率设置颜色
-      let pointsColor = '#34c759'; // 绿色 - 正常
-      if (percent >= 100) {
-        pointsColor = '#ff3b30'; // 红色 - 已用完
-      } else if (percent > 90) {
-        pointsColor = '#ff9500'; // 橙色 - 即将用完
-      }
-      
-      if (accountPoints) {
-        accountPoints.textContent = `${used} / ${total}`;
-        accountPoints.style.color = pointsColor;
-      }
-      if (pointsPercent) pointsPercent.textContent = `(${percent}%)`;
-      if (pointsBar) {
-        pointsBar.style.width = `${percent}%`;
-        pointsBar.style.background = pointsColor;
-      }
+      // 积分显示 - 使用统一函数的方法
+      creditsInfo.updateHomePage(accountPoints, pointsPercent, pointsBar);
       
       // 试用期信息
-      if (info.currentAccount.createdAt) {
+      let days = 0;
+      let expiryDateStr = '';
+      let createdDateStr = '';
+      
+      if (info.currentAccount.expiresAt) {
+        // 优先使用真实的到期时间
+        const expiry = new Date(info.currentAccount.expiresAt);
+        const now = new Date();
+        days = Math.floor((expiry - now) / (1000 * 60 * 60 * 24));
+        expiryDateStr = formatDateTime(info.currentAccount.expiresAt);
+      } else if (info.currentAccount.createdAt) {
+        // 如果没有到期时间，根据创建时间计算
         const created = new Date(info.currentAccount.createdAt);
         const expiry = new Date(created);
-        expiry.setDate(expiry.getDate() + 13);
+        expiry.setDate(expiry.getDate() + 14); // 修正为14天
         const now = new Date();
-        const days = Math.ceil((expiry - now) / (1000 * 60 * 60 * 24));
-        
-        if (daysLeft) {
-          daysLeft.textContent = days > 0 ? `剩余${days}天` : '已过期';
-          // 重新设计试用期剩余天数的颜色方案
-          if (days > 0) {
-            if (days >= 7) {
-              // 充足时间：绿色系
-              daysLeft.style.background = '#d4edda';
-              daysLeft.style.color = '#155724';
-              daysLeft.style.border = '1px solid #c3e6cb';
-            } else if (days >= 3) {
-              // 警告期：黄色系
-              daysLeft.style.background = '#fff3cd';
-              daysLeft.style.color = '#856404';
-              daysLeft.style.border = '1px solid #ffeaa7';
-            } else {
-              // 紧急期：红色系
-              daysLeft.style.background = '#f8d7da';
-              daysLeft.style.color = '#721c24';
-              daysLeft.style.border = '1px solid #f5c6cb';
-            }
-          } else {
-            // 已过期：深红色系
-            daysLeft.style.background = '#f5c6cb';
-            daysLeft.style.color = '#721c24';
-            daysLeft.style.border = '1px solid #dc3545';
-          }
-        }
-        
-        if (endTime) {
-          endTime.textContent = expiry.toLocaleString('zh-CN', {
-            year: 'numeric',
-            month: '2-digit',
-            day: '2-digit',
-            hour: '2-digit',
-            minute: '2-digit',
-            hour12: false
-          });
+        days = Math.floor((expiry - now) / (1000 * 60 * 60 * 24));
+        expiryDateStr = formatDateTime(expiry);
+      }
+      
+      // 格式化创建时间
+      createdDateStr = formatDateTime(info.currentAccount.createdAt);
+      
+      // 设置剩余天数显示和样式
+      if (daysLeft) {
+        daysLeft.textContent = days > 0 ? `剩余${days}天` : '已过期';
+        applyDaysLeftStyle(daysLeft, days);
+      }
+      
+      // 设置开始时间
+      if (startTime) {
+        startTime.textContent = createdDateStr;
+      }
+      
+      // 设置结束时间（包含样式徽章）
+      if (endTime) {
+        if (expiryDateStr) {
+          const daysText = days > 0 ? `剩余${days}天` : '已过期';
+          const badgeStyle = getDaysLeftStyleString(days);
+          endTime.innerHTML = `${expiryDateStr} <span style="margin-left: 8px; padding: 4px 8px; border-radius: 4px; font-size: 12px; font-weight: 500; ${badgeStyle}">${daysText}</span>`;
+        } else {
+          endTime.textContent = '未知';
         }
       }
       
@@ -155,10 +123,17 @@ async function refreshSystemInfo(showNotification = false) {
       if (accountName) accountName.textContent = '未登录';
       if (accountEmail) accountEmail.textContent = '-';
       if (accountType) accountType.style.display = 'none';
-      if (accountPoints) accountPoints.textContent = '0 / 500';
-      if (pointsPercent) pointsPercent.textContent = '(0%)';
-      if (pointsBar) pointsBar.style.width = '0%';
+      if (accountPoints) {
+        accountPoints.textContent = '- / -';
+        accountPoints.style.color = '#86868b';
+      }
+      if (pointsPercent) pointsPercent.textContent = '(-)';
+      if (pointsBar) {
+        pointsBar.style.width = '0%';
+        pointsBar.style.background = '#86868b';
+      }
       if (daysLeft) daysLeft.textContent = '-';
+      if (startTime) startTime.textContent = '-';
       if (endTime) endTime.textContent = '-';
       if (apiKey) apiKey.textContent = '-';
       
@@ -169,8 +144,7 @@ async function refreshSystemInfo(showNotification = false) {
       }
     }
   } catch (error) {
-    console.error('获取系统信息失败:', error);
-    await ipcRenderer.invoke('log-message', { message: '获取系统信息失败: ' + error.message, type: 'error' });
+    await handleError(error, '获取系统信息');
   }
 }
 

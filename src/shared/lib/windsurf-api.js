@@ -104,6 +104,8 @@ async function getUserFullInfo(authToken) {
       usage: currentUserResult.usage,
       team: currentUserResult.team,
       isPro: currentUserResult.isPro,
+      createdAt: currentUserResult.createdAt, // 传递创建时间
+      expiresAt: currentUserResult.expiresAt, // 传递到期时间
       // 错误信息
       registerError: registerResult.success ? null : registerResult.error,
       currentUserError: currentUserResult.success ? null : currentUserResult.error
@@ -164,11 +166,63 @@ function parseGetCurrentUserResponse(buffer) {
     const decoded = decodeProtobufMessage(buffer);
     const credits = extractCreditsInfo(decoded);
     
+    // 提取创建时间和到期时间
+    let createdAt = null;
+    let expiresAt = null;
+    try {
+      // 查找时间戳的辅助函数
+      const extractTimestamp = (obj) => {
+        if (obj && obj['1'] && typeof obj['1'] === 'number' && obj['1'] > 1600000000) {
+          const seconds = obj['1'];
+          const nanos = obj['2'] || 0;
+          return new Date(seconds * 1000 + Math.floor(nanos / 1000000)).toISOString();
+        }
+        return null;
+      };
+
+      const timestamps = [];
+      
+      // 直接从已知的关键路径提取时间戳
+      const knownPaths = [
+        decoded.nested_4?.nested_3,
+        decoded.nested_4?.nested_9, 
+        decoded.nested_4?.nested_18,
+        decoded.nested_4?.nested_20,
+        decoded.nested_4?.nested_21,
+        decoded.nested_1?.nested_2,
+        decoded.nested_1?.nested_3
+      ];
+      
+      // 提取有效时间戳
+      for (const obj of knownPaths) {
+        const ts = extractTimestamp(obj);
+        if (ts) timestamps.push(ts);
+      }
+      
+      if (timestamps.length > 0) {
+        // 按时间排序
+        timestamps.sort((a, b) => new Date(a) - new Date(b));
+        
+        // 简单逻辑：最早的是创建时间，最晚的是到期时间
+        createdAt = timestamps[0];
+        if (timestamps.length > 1) {
+          // 寻找未来的时间戳作为到期时间
+          const now = new Date();
+          const futureTimestamps = timestamps.filter(ts => new Date(ts) > now);
+          expiresAt = futureTimestamps.length > 0 ? futureTimestamps[0] : timestamps[timestamps.length - 1];
+        }
+      }
+    } catch (e) {
+      // 忽略提取错误
+    }
+
     // 判断账号类型
     const subscriptionType = determineSubscriptionType(credits);
     
     return {
       success: true,
+      createdAt: createdAt, // 返回创建时间
+      expiresAt: expiresAt, // 返回到期时间
       user: {
         email: email,
         name: displayName,
@@ -435,8 +489,56 @@ function encodeBool(fieldNumber, value) {
   return Buffer.concat([tagBytes, valueBytes]);
 }
 
+/**
+ * 通过邮箱和密码获取完整账号信息（公共函数）
+ * @param {string} email - 邮箱
+ * @param {string} password - 密码
+ * @returns {Promise<Object>}
+ */
+async function getAccountCredits(email, password) {
+  try {
+    // 1. Firebase 登录
+    const { loginWithEmailPassword } = require('./firebase-auth');
+    const loginResult = await loginWithEmailPassword(email, password);
+    
+    if (!loginResult.success) {
+      return { success: false, error: '登录失败: ' + loginResult.error };
+    }
+    
+    // 2. 获取完整信息
+    const fullInfo = await getUserFullInfo(loginResult.idToken);
+    
+    if (!fullInfo.success || !fullInfo.usage) {
+      return { success: false, error: 'API调用失败: ' + (fullInfo.error || '未知错误') };
+    }
+    
+    // 3. 返回格式化的数据
+    return {
+      success: true,
+      data: {
+        email: fullInfo.user?.email || email,
+        name: fullInfo.user?.name || fullInfo.user?.displayName || email.split('@')[0],
+        usedPromptCredits: fullInfo.usage.displayPromptUsed || 0,
+        monthlyPromptCredits: fullInfo.usage.displayPromptLimit || 500,
+        usedFlowCredits: fullInfo.usage.displayFlowUsed || 0,
+        monthlyFlowCredits: fullInfo.usage.displayFlowLimit || 500,
+        isPro: fullInfo.isPro || false,
+        accountType: fullInfo.isPro ? 'PRO' : 'Free',
+        createdAt: fullInfo.createdAt,
+        expiresAt: fullInfo.expiresAt,
+        apiKey: fullInfo.apiKey,
+        serverUrl: fullInfo.serverUrl
+      }
+    };
+  } catch (error) {
+    logger.error('获取账号积分失败', error.message);
+    return { success: false, error: error.message };
+  }
+}
+
 module.exports = {
   registerUser,        // 简单方式：只获取 API Key 和用户名
   getCurrentUser,      // 完整方式：获取积分详情
-  getUserFullInfo      // 推荐方式：获取所有信息（并行调用）
+  getUserFullInfo,     // 推荐方式：获取所有信息（并行调用）
+  getAccountCredits    // 公共函数：通过邮箱密码获取积分
 };

@@ -3,7 +3,7 @@
  */
 
 const { ipcRenderer } = require('electron');
-const { showToast } = require('../utils/utils');
+const { showToast, generateEmptyStateHTML } = require('../utils/utils');
 
 let virtualCards = [];
 let editingCardId = null;
@@ -31,14 +31,7 @@ function renderCards() {
   const fullCards = virtualCards.filter(c => c.type === 'full' || !c.type);
   
   if (fullCards.length === 0) {
-    tbody.innerHTML = `
-      <tr>
-        <td colspan="7" style="text-align:center; padding:40px; color:#86868b;">
-          <div style="font-size:14px;">暂无完整卡</div>
-          <div style="font-size:12px; margin-top:8px;">点击"添加"按钮或从BIN生成</div>
-        </td>
-      </tr>
-    `;
+    tbody.innerHTML = generateEmptyStateHTML(7, '暂无完整卡', '点击"添加"按钮或从BIN生成');
     return;
   }
   
@@ -416,14 +409,7 @@ function renderBins() {
   const bins = virtualCards.filter(c => c.type === 'bin');
   
   if (bins.length === 0) {
-    tbody.innerHTML = `
-      <tr>
-        <td colspan="4" style="text-align:center; padding:20px; color:#86868b;">
-          <div style="font-size:13px;">暂无BIN卡头</div>
-          <div style="font-size:12px; margin-top:4px;">点击"添加"按钮开始添加</div>
-        </td>
-      </tr>
-    `;
+    tbody.innerHTML = generateEmptyStateHTML(4, '暂无BIN卡头', '点击"添加"按钮开始添加');
     return;
   }
   

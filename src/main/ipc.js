@@ -65,9 +65,21 @@ function registerAllIPC(app, mainWindow) {
   // ==================== 账号管理 ====================
   ipcMain.handle('get-accounts', async () => {
     try {
+      systemLogger.info(`📧 账号数据获取地址: ${ACCOUNTS_FILE}`);
+      systemLogger.info(`正在读取账号文件: ${ACCOUNTS_FILE}`);
       const data = await fs.readFile(ACCOUNTS_FILE, 'utf-8');
-      return JSON.parse(data);
+      const accounts = JSON.parse(data);
+      systemLogger.info(`成功读取 ${accounts.length} 个账号`);
+      
+      // 显示前5个邮箱地址作为示例
+      if (accounts.length > 0) {
+        const emailSample = accounts.slice(0, 5).map(acc => acc.email).join(', ');
+        systemLogger.info(`📧 邮箱地址示例: ${emailSample}${accounts.length > 5 ? '...' : ''}`);
+      }
+      
+      return accounts;
     } catch (error) {
+      systemLogger.error(`读取账号文件失败: ${error.message}`);
       return [];
     }
   });
@@ -98,7 +110,8 @@ function registerAllIPC(app, mainWindow) {
       }
       
       account.id = Date.now().toString();
-      account.createdAt = new Date().toISOString();
+      // 不自动设置 createdAt，让账号保持未知状态，等刷新后获取真实数据
+      // 只有通过刷新操作才会设置真实的创建时间
       accounts.push(account);
       
       await fs.writeFile(ACCOUNTS_FILE, JSON.stringify(accounts, null, 2));
@@ -400,9 +413,13 @@ function registerAllIPC(app, mainWindow) {
 
   ipcMain.handle('get-cards', async () => {
     try {
+      systemLogger.info(`💳 虚拟卡获取地址: ${CARDS_FILE}`);
       const data = await fs.readFile(CARDS_FILE, 'utf-8');
-      return { success: true, cards: JSON.parse(data) };
+      const cards = JSON.parse(data);
+      systemLogger.info(`成功读取 ${cards.length} 张虚拟卡`);
+      return { success: true, cards: cards };
     } catch (error) {
+      systemLogger.info(`虚拟卡文件不存在或为空，返回空数组: ${error.message}`);
       // 文件不存在，返回空数组
       return { success: true, cards: [] };
     }
@@ -440,28 +457,21 @@ function registerAllIPC(app, mainWindow) {
         return { success: false, error: '密码未保存，无法刷新' };
       }
       
-      // 3. 调用 Firebase 登录获取最新积分
-      const { loginWithEmailPassword } = require('../shared/lib/firebase-auth');
-      const loginResult = await loginWithEmailPassword(account.email, account.password);
+      // 3. 使用公共函数获取积分信息
+      const { getAccountCredits } = require('../shared/lib/windsurf-api');
+      const creditsResult = await getAccountCredits(account.email, account.password);
       
-      if (!loginResult.success) {
-        return { success: false, error: '登录失败: ' + loginResult.error };
+      if (!creditsResult.success) {
+        return { success: false, error: creditsResult.error };
       }
       
-      // 4. 调用 Windsurf API 获取积分
-      const { getCurrentUser } = require('../shared/lib/windsurf-api');
-      const apiResult = await getCurrentUser(loginResult.idToken);
-      
-      if (!apiResult.success || !apiResult.usage) {
-        return { success: false, error: 'API调用失败: ' + (apiResult.error || '未知错误') };
-      }
-      
-      // 5. 更新账号数据
-      account.usedPromptCredits = apiResult.usage.displayPromptUsed || 0;
-      account.monthlyPromptCredits = apiResult.usage.displayPromptLimit || 500;
-      account.usedFlowCredits = apiResult.usage.displayFlowUsed || 0;
-      account.monthlyFlowCredits = apiResult.usage.displayFlowLimit || 1500;
-      account.accountType = apiResult.isPro ? 'PRO' : 'Free';
+      // 4. 更新账号数据
+      const data = creditsResult.data;
+      account.usedPromptCredits = data.usedPromptCredits;
+      account.monthlyPromptCredits = data.monthlyPromptCredits;
+      account.usedFlowCredits = data.usedFlowCredits;
+      account.monthlyFlowCredits = data.monthlyFlowCredits;
+      account.accountType = data.accountType;
       
       // 6. 根据积分情况更新绑卡状态
       // 如果积分小于500，说明没有成功绑卡（PRO账号应该有500积分）

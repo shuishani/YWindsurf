@@ -107,22 +107,24 @@ class AccountSwitcher {
    */
   buildSessionsData(accountDetails) {
     const sessionId = this.generateUUID();
+    
+    // 按照 demo 的正确格式构建 sessions 数据
     const sessionsData = [{
       id: sessionId,
-      accessToken: accountDetails.apiKey,
+      accessToken: accountDetails.apiKey,  // API Key
       account: {
-        label: accountDetails.name,
-        id: accountDetails.name
+        label: accountDetails.name,  // 用户名，不是邮箱
+        id: accountDetails.name      // 用户名，不是邮箱
       },
       scopes: []
     }];
 
-
+    this.logger.info(`构建账号数据 - 用户名: ${accountDetails.name}, API Key: ${accountDetails.apiKey ? '已获取' : '未获取'}`);
     return sessionsData;
   }
 
   /**
-   * 写入 sessions 数据到 Windsurf SQLite 数据库
+   * 写入 sessions 数据到数据库 - 简单替换方式
    */
   async writeSessionsToDatabase(encryptedBuffer) {
     try {
@@ -133,34 +135,25 @@ class AccountSwitcher {
         throw new Error('请先启动 Windsurf 再进行切号');
       }
 
-      // 等待文件释放并创建备份
-      await new Promise(resolve => setTimeout(resolve, 1000));
+      // 等待文件释放（减少等待时间）
+      await new Promise(resolve => setTimeout(resolve, 500)); // 从1秒减少到0.5秒
+
+      // 直接修改数据库中的 sessions 数据
+      const Database = require('better-sqlite3');
+      const db = new Database(this.stateDbPath);
       
-      const backupPath = this.stateDbPath + '.backup';
       try {
-        await fs.copyFile(this.stateDbPath, backupPath);
-      } catch (backupError) {
-        // 备份失败不影响主流程
-      }
-
-      // 使用 better-sqlite3 操作数据库
-      try {
-        const Database = require('better-sqlite3');
-        const db = new Database(this.stateDbPath);
+        // 设置更快的同步模式
+        db.pragma('synchronous = NORMAL'); // 从FULL改为NORMAL，提高速度
+        db.pragma('journal_mode = WAL'); // 使用WAL模式提高并发性能
         
-        try {
-          // 验证数据库表结构
-          const tables = db.prepare("SELECT name FROM sqlite_master WHERE type='table'").all();
-          const itemTableExists = tables.some(t => t.name === 'ItemTable');
-          if (!itemTableExists) {
-            throw new Error('Windsurf 配置文件格式不正确');
-          }
-
+        // 使用事务提高性能
+        const transaction = db.transaction(() => {
           // 删除旧的 sessions 数据
           const deleteStmt = db.prepare('DELETE FROM ItemTable WHERE key = ?');
           deleteStmt.run(this.sessionsKey);
 
-          // 插入新的 sessions 数据
+          // 插入新的 sessions 数据 - 按照 demo 的 JSON 格式存储
           const sessionsValue = JSON.stringify({
             type: "Buffer",
             data: Array.from(encryptedBuffer)
@@ -168,29 +161,74 @@ class AccountSwitcher {
 
           const insertStmt = db.prepare('INSERT INTO ItemTable (key, value) VALUES (?, ?)');
           insertStmt.run(this.sessionsKey, sessionsValue);
+        });
+        
+        transaction(); // 执行事务
+        
+        this.logger.success('账号配置更新完成');
+        return { success: true };
 
-          // 强制同步数据到磁盘
-          try {
-            db.pragma('synchronous = FULL');
-            const walMode = db.pragma('journal_mode', { simple: true });
-            if (walMode === 'wal') {
-              db.pragma('wal_checkpoint(FULL)');
-            }
-          } catch (syncError) {
-            // 同步失败不影响主流程，数据已写入
-          }
-          return { success: true };
-
-        } finally {
-          db.close();
-        }
-      } catch (sqliteError) {
-        throw new Error('保存账号配置时出现问题');
+      } finally {
+        db.close();
       }
 
     } catch (error) {
       this.logger.error('保存账号配置失败', error.message);
-      return { success: false, error: '保存账号配置失败' };
+      return { success: false, error: error.message };
+    }
+  }
+
+  /**
+   * 清理 Windsurf 账号相关缓存
+   */
+  async clearWindsurfCache() {
+    try {
+      // 只清理账号相关的缓存文件
+      const accountCacheFiles = [
+        // 账号会话缓存
+        path.join(this.windsurfUserDataPath, 'User', 'globalStorage', 'storage.json.backup'),
+        // 用户认证缓存
+        path.join(this.windsurfUserDataPath, 'User', 'globalStorage', 'state.vscdb.backup'),
+      ];
+
+      let clearedCount = 0;
+      
+      for (const cachePath of accountCacheFiles) {
+        try {
+          await fs.unlink(cachePath);
+          clearedCount++;
+        } catch (error) {
+          // 文件不存在，忽略
+        }
+      }
+
+      // 清理 localStorage 中的账号相关数据
+      try {
+        const localStoragePath = path.join(this.windsurfUserDataPath, 'Local Storage');
+        const levelDbPath = path.join(localStoragePath, 'leveldb');
+        
+        if (await fs.access(levelDbPath).then(() => true).catch(() => false)) {
+          // 只删除 leveldb 中的账号相关缓存，保留其他设置
+          const files = await fs.readdir(levelDbPath);
+          for (const file of files) {
+            if (file.includes('auth') || file.includes('session') || file.includes('user')) {
+              await fs.unlink(path.join(levelDbPath, file));
+              clearedCount++;
+            }
+          }
+        }
+      } catch (error) {
+        // 忽略错误
+      }
+
+      if (clearedCount > 0) {
+        this.logger.info(`已清理 ${clearedCount} 项账号缓存`);
+      } else {
+        this.logger.info('无需清理账号缓存');
+      }
+      
+    } catch (error) {
+      this.logger.warning('清理账号缓存时出错，但不影响切号: ' + error.message);
     }
   }
 
@@ -221,48 +259,12 @@ class AccountSwitcher {
     try {
       this.logger.start('开始切换账号');
       this.logger.info(`目标账号: ${email}`);
-      this.logger.info('预计需要 30-40 秒，请耐心等待...');
-
-      // 步骤1: 获取账号详情
-      this.sendProgress(1, 6, '验证账号...');
-      this.logger.step(1, '验证并准备账号数据');
       const { ipcMain } = require('electron');
       
       // 模拟调用 get-account-details
-      const accountDetailsResult = await new Promise((resolve) => {
-        // 这里需要调用现有的 get-account-details 逻辑
-        const { loginWithEmailPassword } = require('../../shared/lib/firebase-auth');
-        const { getUserFullInfo } = require('../../shared/lib/windsurf-api');
-        
-        (async () => {
-          try {
-            // Firebase 登录
-            const loginResult = await loginWithEmailPassword(email, password);
-            if (!loginResult.success) {
-              return resolve({ success: false, error: '登录失败: ' + loginResult.error });
-            }
-
-            // 获取完整信息
-            const apiResult = await getUserFullInfo(loginResult.idToken);
-            if (!apiResult.success) {
-              return resolve({ success: false, error: '获取账号信息失败: ' + apiResult.error });
-            }
-
-            const user = apiResult.user || {};
-            resolve({
-              success: true,
-              data: {
-                email: user.email || email,
-                name: user.name || user.displayName || email.split('@')[0],
-                apiKey: apiResult.apiKey,
-                serverUrl: apiResult.serverUrl
-              }
-            });
-          } catch (error) {
-            resolve({ success: false, error: error.message });
-          }
-        })();
-      });
+      // 使用公共函数获取账号详情
+      const { getAccountCredits } = require('../../shared/lib/windsurf-api');
+      const accountDetailsResult = await getAccountCredits(email, password);
 
       if (!accountDetailsResult.success) {
         throw new Error('获取账号详情失败: ' + accountDetailsResult.error);
@@ -277,9 +279,8 @@ class AccountSwitcher {
       this.sendProgress(2, 6, '数据准备完成');
       this.logger.success('账号数据准备完成: ' + accountDetails.email);
 
-      // 步骤4: 关闭 Windsurf（保留数据库文件）
+      // 关闭 Windsurf
       this.sendProgress(3, 6, '关闭 Windsurf...');
-      this.logger.step(4, '关闭 Windsurf');
       const WindsurfManagerFactory = require('./windsurf-factory');
       // 传入'切号'标签,统一日志标签
       const manager = WindsurfManagerFactory.create(null, '切号');
@@ -292,25 +293,26 @@ class AccountSwitcher {
         this.logger.success('Windsurf 已关闭');
       }
 
-      // 步骤5: 写入数据库（替换现有 sessions）
+      // 等待进程完全关闭
+      await new Promise(resolve => setTimeout(resolve, 2000));
+
+      // 保存账号配置
       this.sendProgress(4, 6, '保存配置...');
-      this.logger.step(5, '保存账号配置');
       const writeResult = await this.writeSessionsToDatabase(encryptedBuffer);
       if (!writeResult.success) {
         throw new Error('保存账号配置失败: ' + writeResult.error);
       }
 
-      // 步骤6: 验证结果
+      // 清理缓存文件
+      await this.clearWindsurfCache();
       this.logger.success('账号配置保存成功');
       await this.verifyAccountSwitch(); // 静默验证，不影响主流程
 
-      // 步骤7: 等待配置生效
-      this.logger.step(7, '等待配置生效 (3秒)');
+      // 等待配置生效
       await new Promise(resolve => setTimeout(resolve, 3000));
 
-      // 步骤8: 启动 Windsurf
+      // 启动 Windsurf
       this.sendProgress(5, 6, '启动 Windsurf...');
-      this.logger.step(8, '启动 Windsurf');
       try {
         const startResult = await manager.startWindsurf();
         if (startResult) {

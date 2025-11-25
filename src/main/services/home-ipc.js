@@ -27,6 +27,7 @@ function extractCreditsFromState(stateData) {
   };
 }
 
+
 /**
  * 根据积分限额判断账号类型
  */
@@ -88,204 +89,83 @@ function registerHomeIPC(app) {
         let userName = null;
         let apiKey = null;
         
-        // 查找加密的 sessions 数据
-        const sessionsKeyPattern = /secret:\/\/\{"extensionId":"codeium\.windsurf","key":"windsurf_auth\.sessions"\}/;
-        const sessionsMatch = stateData.match(sessionsKeyPattern);
-        
-        if (sessionsMatch) {
-          // 查找对应的加密数据（Buffer格式）
-          const sessionsKeyIndex = stateData.indexOf('secret://{"extensionId":"codeium.windsurf","key":"windsurf_auth.sessions"}');
-          let bufferMatch = null;
+        // 从 windsurfAuthStatus 获取当前账户信息
+        let planName = 'Free';
+        try {
+          const Database = require('better-sqlite3');
+          const db = new Database(stateDbPath);
           
-          if (sessionsKeyIndex !== -1) {
-            // 从找到的位置开始查找后面的 Buffer 数据
-            const afterKey = stateData.substring(sessionsKeyIndex + 200);
-            const bufferPattern = /\{"type":"Buffer","data":\[([0-9,]+)\]\}/;
-            bufferMatch = afterKey.match(bufferPattern);
-          }
-          
-          if (bufferMatch) {
-            try {
-              // 解析 Buffer 数据
-              const bufferData = JSON.parse(`{"type":"Buffer","data":[${bufferMatch[1]}]}`);
-              const buffer = Buffer.from(bufferData.data);
-              
-              // 使用 Windsurf userData 路径，可以直接解密
-              const { safeStorage } = require('electron');
-              const decryptedData = safeStorage.decryptString(buffer);
-              const sessions = JSON.parse(decryptedData);
-              
-              if (sessions && sessions.length > 0) {
-                const session = sessions[0];
-                apiKey = session.accessToken;
-                userName = session.account?.label || session.account?.id;
-                
-                // 尝试从不同字段获取邮箱
-                email = session.account?.email || session.email || userName;
-                
-                // 如果获取到的是用户名而不是邮箱，尝试从其他地方找邮箱
-                if (email && !email.includes('@')) {
-                  // 优先查找临时邮箱域名
-                  const tempEmailMatch = stateData.match(/([a-zA-Z0-9._%+-]+@181557\.xyz)/);
-                  if (tempEmailMatch) {
-                    email = tempEmailMatch[1];
-                  } else {
-                    // 查找所有邮箱，过滤示例邮箱
-                    const allEmails = stateData.match(/([a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,})/g);
-                    if (allEmails) {
-                      // 过滤掉示例邮箱
-                      const realEmails = allEmails.filter(e => 
-                        !e.includes('example.com') && 
-                        !e.includes('test.com') && 
-                        !e.includes('demo.com') &&
-                        !e.includes('sample.com') &&
-                        !e.includes('localhost')
-                      );
-                      
-                      // 优先选择临时邮箱域名
-                      const tempEmails = realEmails.filter(e => 
-                        e.includes('181557.xyz') || 
-                        e.includes('tempmail') || 
-                        e.includes('10minutemail') ||
-                        e.includes('guerrillamail') ||
-                        e.includes('mailinator')
-                      );
-                      
-                      email = tempEmails[0] || realEmails[0];
-                    }
-                  }
-                }
-                
-                if (email) {
-                  logger.success(`已登录账号: ${email}`);
-                }
+          try {
+            const stmt = db.prepare('SELECT value FROM ItemTable WHERE key = ?');
+            const result = stmt.get('windsurfAuthStatus');
+            if (result && result.value) {
+              const authStatus = JSON.parse(result.value);
+              if (authStatus.email) {
+                email = authStatus.email;
+                userName = authStatus.name;
+                apiKey = authStatus.apiKey;
+                planName = authStatus.planName || 'Free'; // 直接获取计划名称
+                logger.success('已登录账号: ' + email + ' (' + planName + ')');
               }
-            } catch (decryptError) {
-              // 降级到正则表达式方法
-              const emailMatch = stateData.match(/([a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,})/);
-              email = emailMatch ? emailMatch[1] : null;
             }
+          } finally {
+            db.close();
           }
+        } catch (dbError) {
+          logger.warning('无法读取账户信息:', dbError.message);
+        }
+        
+        // 如果没有获取到邮箱，可以添加备用的 sessions 解析逻辑
+        if (!email || !email.includes('@')) {
+          // TODO: 可在此处添加 sessions 解析作为备用方案
         }
         
         if (email) {
-          // 如果没有从 sessions 获取到用户名，尝试从其他地方提取
-          if (!userName) {
-            const nameMatch = stateData.match(/"displayName":"([^"]+)"|"name":"([^"]+)"/);
-            userName = nameMatch ? (nameMatch[1] || nameMatch[2]) : null;
-          }
           
-          // 如果没有从 sessions 获取到 API Key，尝试从其他地方提取
-          if (!apiKey) {
-            const apiKeyMatch = stateData.match(/"apiKey":"([^"]+)"|"api_key":"([^"]+)"/);
-            apiKey = apiKeyMatch ? (apiKeyMatch[1] || apiKeyMatch[2]) : null;
-          }
-          
-          // 获取积分信息
+          // 获取完整积分信息
           let usedPromptCredits = 0;
-          let monthlyPromptCredits = 500;
+          let monthlyPromptCredits = planName === 'Pro' ? 750 : 500;
           let usedFlowCredits = 0;
-          let monthlyFlowCredits = 1500;
-          let accountType = 'Free';
-          let isPro = false;
-          
-          // 尝试获取最新积分信息
-          let firebaseTokenObtained = false;
-          try {
-            // 读取保存的账号信息
-            const ACCOUNTS_FILE = path.join(app.getPath('userData'), 'accounts.json');
-            logger.info('获取最新积分');
-            
-            const accountsData = await fs.readFile(ACCOUNTS_FILE, 'utf-8');
-            const accounts = JSON.parse(accountsData);
-            
-            // 找到当前登录的账号（匹配邮箱）
-            const currentAccount = accounts.find(acc => acc.email === email);
-            
-            if (currentAccount && currentAccount.password) {
-              const { loginWithEmailPassword } = require('../../shared/lib/firebase-auth');
-              const loginResult = await loginWithEmailPassword(currentAccount.email, currentAccount.password);
-              
-              if (loginResult.success) {
-                const firebaseToken = loginResult.idToken;
-                
-                // 使用Firebase ID Token调用Windsurf API
-                const { getCurrentUser } = require('../../shared/lib/windsurf-api');
-                const apiResult = await getCurrentUser(firebaseToken);
-                
-                if (apiResult.success && apiResult.usage) {
-                  usedPromptCredits = apiResult.usage.displayPromptUsed || 0;
-                  monthlyPromptCredits = apiResult.usage.displayPromptLimit || 500;
-                  usedFlowCredits = apiResult.usage.displayFlowUsed || 0;
-                  monthlyFlowCredits = apiResult.usage.displayFlowLimit || 1500;
-                  isPro = apiResult.isPro || false;
-                  firebaseTokenObtained = true;
-                  
-                  logger.success(`积分: ${usedPromptCredits}/${monthlyPromptCredits}`);
-                } else {
-                  throw new Error(apiResult.error || '解析响应失败');
-                }
-              } else {
-                throw new Error('登录失败: ' + loginResult.error);
-              }
-            } else {
-              throw new Error('未找到账号信息');
-            }
-          } catch (e) {
-            // 降级：尝试使用其他方法
-            if (apiKey && !firebaseTokenObtained) {
-              try {
-                const { getCurrentUser } = require('../../shared/lib/windsurf-api');
-                const apiResult = await getCurrentUser(apiKey);
-                
-                if (apiResult.success && apiResult.usage) {
-                  usedPromptCredits = apiResult.usage.displayPromptUsed || 0;
-                  monthlyPromptCredits = apiResult.usage.displayPromptLimit || 500;
-                  usedFlowCredits = apiResult.usage.displayFlowUsed || 0;
-                  monthlyFlowCredits = apiResult.usage.displayFlowLimit || 1500;
-                  isPro = apiResult.isPro || false;
-                  
-                  logger.success(`积分: ${usedPromptCredits}/${monthlyPromptCredits}`);
-                } else {
-                  throw new Error(apiResult.error || '解析响应失败');
-                }
-              } catch (e2) {
-                throw e2;
-              }
-            } else {
-              throw e;
-            }
-          }
-          
-          // 如果API调用失败，使用缓存数据
-          if (!firebaseTokenObtained && usedPromptCredits === 0 && monthlyPromptCredits === 500) {
-            const credits = extractCreditsFromState(stateData);
-            usedPromptCredits = credits.usedPrompt;
-            monthlyPromptCredits = credits.monthlyPrompt;
-            usedFlowCredits = credits.usedFlow;
-            monthlyFlowCredits = credits.monthlyFlow;
-            logger.info('使用缓存数据');
-          }
-          
-          // 判断账号类型
-          const accountInfo = getAccountType(monthlyPromptCredits);
-          accountType = accountInfo.type;
-          isPro = accountInfo.isPro;
-          
-          // 获取账号创建时间
+          let monthlyFlowCredits = planName === 'Pro' ? 1500 : 500;
           let createdAt = null;
+          let expiresAt = null;
+          
           try {
+            // 从本地账号文件获取密码
             const ACCOUNTS_FILE = path.join(app.getPath('userData'), 'accounts.json');
             const accountsData = await fs.readFile(ACCOUNTS_FILE, 'utf-8');
             const accounts = JSON.parse(accountsData);
             const localAccount = accounts.find(acc => acc.email === email);
-            if (localAccount?.createdAt) {
-              createdAt = localAccount.createdAt;
-              // 静默获取创建时间
+            
+            if (localAccount?.password) {
+              // 使用公共函数获取积分信息
+              const { getAccountCredits } = require('../../shared/lib/windsurf-api');
+              const creditsResult = await getAccountCredits(email, localAccount.password);
+              
+              if (creditsResult.success) {
+                const data = creditsResult.data;
+                usedPromptCredits = data.usedPromptCredits;
+                monthlyPromptCredits = data.monthlyPromptCredits;
+                usedFlowCredits = data.usedFlowCredits;
+                monthlyFlowCredits = data.monthlyFlowCredits;
+                createdAt = data.createdAt;
+                expiresAt = data.expiresAt;
+                
+                logger.success(`API获取成功: ${usedPromptCredits}/${monthlyPromptCredits}`);
+              } else {
+                logger.warning('积分获取失败，使用默认值:', creditsResult.error);
+              }
+            } else {
+              logger.warning(`账号 ${email} 未保存密码，使用默认值`);
+              logger.info('请在账户管理页面添加密码以获取准确积分');
             }
           } catch (e) {
-            // 静默处理，创建时间不是必需的
+            logger.warning('积分获取失败，使用默认值:', e.message);
           }
+          
+          // 直接使用 planName 判断账号类型
+          const accountType = planName;
+          const isPro = planName === 'Pro';
           
           // 创建账号信息
           currentAccount = {
@@ -298,7 +178,8 @@ function registerHomeIPC(app) {
             monthlyPromptCredits: monthlyPromptCredits,
             usedFlowCredits: usedFlowCredits,
             monthlyFlowCredits: monthlyFlowCredits,
-            createdAt: createdAt
+            createdAt: createdAt,
+            expiresAt: expiresAt
           };
           
           logger.success(`${accountType} 账号已就绪`);
@@ -412,88 +293,10 @@ function registerHomeIPC(app) {
     }
   });
 
-  // 获取指定账号的详细信息（通过Firebase登录）
+  // 获取指定账号的详细信息（直接使用公共函数）
   ipcMain.handle('get-account-details', async (event, email, password) => {
-    try {
-      if (!password) {
-        return {
-          success: false,
-          error: '密码未保存，无法获取详情'
-        };
-      }
-      
-      // 1. Firebase登录
-      const { loginWithEmailPassword } = require('../../shared/lib/firebase-auth');
-      const loginResult = await loginWithEmailPassword(email, password);
-      
-      if (!loginResult.success) {
-        return {
-          success: false,
-          error: '登录失败: ' + loginResult.error
-        };
-      }
-      
-      // 2. 调用Windsurf API获取用户完整信息（包含API Key和积分）
-      const { getUserFullInfo } = require('../../shared/lib/windsurf-api');
-      const apiResult = await getUserFullInfo(loginResult.idToken);
-      
-      if (!apiResult.success) {
-        console.error('❌ API调用失败:', apiResult.error);
-        return {
-          success: false,
-          error: `API调用失败: ${apiResult.error || '未知错误'}`
-        };
-      }
-      
-      // 3. 解析并返回数据
-      const user = apiResult.user || {};
-      const subscription = apiResult.subscription || {};
-      const usage = apiResult.usage || {};
-      const team = apiResult.team || {};
-      
-      // 使用官网显示格式的积分值（已经除以100）
-      // usage对象包含原始值和显示值两种格式
-      const displayUsedPrompt = usage?.displayPromptUsed ?? 0;
-      const displayUsedFlow = usage?.displayFlowUsed ?? 0;
-      const displayLimitPrompt = usage?.displayPromptLimit ?? 500;
-      const displayLimitFlow = usage?.displayFlowLimit ?? 1500;
-      const displayUsedTotal = usage?.displayUsed ?? (displayUsedPrompt + displayUsedFlow);
-      const displayLimitTotal = usage?.displayLimit ?? (displayLimitPrompt + displayLimitFlow);
-      
-      return {
-        success: true,
-        data: {
-          email: user.email || email,
-          name: user.name || user.displayName || email.split('@')[0],
-          userId: user.localId || user.uid,
-          isPro: apiResult.isPro || false,
-          subscriptionType: subscription.type || 'FREE',
-          teamName: team?.name,
-          // API Key（来自 RegisterUser API）
-          apiKey: apiResult.apiKey || null,
-          serverUrl: apiResult.serverUrl || null,
-          // 使用官网显示格式的积分值
-          usedPoints: displayUsedTotal,
-          maxPoints: displayLimitTotal,
-          remainingPoints: displayLimitTotal - displayUsedTotal,
-          usedPromptCredits: displayUsedPrompt,
-          usedFlowCredits: displayUsedFlow,
-          monthlyPromptCredits: displayLimitPrompt,
-          monthlyFlowCredits: displayLimitFlow,
-          // 原始API值（用于调试）
-          rawUsedPromptCredits: usage?.promptUsed,
-          rawUsedFlowCredits: usage?.flowUsed,
-          rawMonthlyPromptCredits: usage?.promptLimit,
-          rawMonthlyFlowCredits: usage?.flowLimit
-        }
-      };
-    } catch (error) {
-      console.error('获取账号详情失败:', error.message);
-      return {
-        success: false,
-        error: error.message
-      };
-    }
+    const { getAccountCredits } = require('../../shared/lib/windsurf-api');
+    return await getAccountCredits(email, password);
   });
 }
 

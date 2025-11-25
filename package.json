@@ -1,6 +1,6 @@
 {
   "name": "ywindsurf",
-  "version": "2.0.0",
+  "version": "2.1.0",
   "description": "YWindsurf 账号管理工具 - 批量注册、自动切换、账号池管理",
   "main": "src/main/index.js",
   "scripts": {
@@ -60,8 +60,7 @@
       "createStartMenuShortcut": true,
       "license": "LICENSE.txt",
       "artifactName": "YWindsurf-Setup.exe",
-      "unicode": true,
-      "language": "2052"
+      "unicode": true
     }
   }
 }

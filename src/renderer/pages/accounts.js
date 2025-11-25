@@ -3,8 +3,7 @@
  */
 
 const { ipcRenderer } = require('electron');
-const path = require('path');
-const { showToast, calculateExpiry, addLog } = require('../utils/utils');
+const { showToast, calculateExpiry, addLog, processAccountCredits, formatDateTime, handleError, generateEmptyStateHTML } = require('../utils/utils');
 
 // ==================== 全局变量 ====================
 let accountsCache = [];
@@ -25,8 +24,7 @@ async function loadAccounts() {
     await renderAccounts();
     updateAccountStats();
   } catch (error) {
-    console.error('加载账号失败:', error);
-    await ipcRenderer.invoke('log-message', { message: '加载账号失败: ' + error.message, type: 'error' });
+    await handleError(error, '加载账号', true);
   }
 }
 
@@ -205,29 +203,137 @@ function getSelectedCardId() {
   return selectedCardId;
 }
 
+// ==================== 账号数据处理函数 ====================
+
+/**
+ * 格式化账号数据
+ */
+function formatAccountData(acc) {
+  const expiry = calculateExpiry(acc.createdAt, acc.expiresAt);
+  
+  // 使用统一的时间格式化函数
+  const expiryDate = expiry.expiryDate ? formatDateTime(expiry.expiryDate) : '未知';
+  
+  return {
+    ...acc,
+    expiry,
+    expiryDate
+  };
+}
+
+/**
+ * 计算账号样式和状态
+ */
+function calculateAccountStyles(acc) {
+  // 使用统一的积分和PRO账号处理函数
+  const creditsInfo = processAccountCredits(acc.usedPromptCredits, acc.monthlyPromptCredits);
+  
+  // 绑卡状态
+  let cardBoundHtml;
+  if (acc.monthlyPromptCredits >= 500) {
+    cardBoundHtml = '<span class="badge badge-card-bound">已绑卡</span>';
+  } else if (acc.needsManualBinding === true) {
+    cardBoundHtml = `
+      <div style="display:flex; gap:4px;">
+        <button onclick="markCardBound('${acc.email}', true); event.stopPropagation();" class="badge badge-card-bound" style="border:none; cursor:pointer;">✓</button>
+        <button onclick="markCardBound('${acc.email}', false); event.stopPropagation();" class="badge badge-card-error" style="border:none; cursor:pointer;">✕</button>
+      </div>
+    `;
+  } else if (acc.cardBound === true) {
+    cardBoundHtml = '<span class="badge badge-card-bound">已绑卡</span>';
+  } else if (acc.cardBound === false) {
+    cardBoundHtml = '<span class="badge badge-card-error">失败</span>';
+  } else {
+    cardBoundHtml = '<span class="badge badge-card-none">未绑</span>';
+  }
+  
+  // Token 状态
+  const tokenHtml = acc.accountType 
+    ? '<span style="color:#34c759; font-size:12px;">● 已获取</span>'
+    : '<span style="color:#86868b; font-size:12px;">○ 未获取</span>';
+      
+  // 到期时间样式
+  let expiryClass = 'expiry-cell';
+  if (acc.expiry.isExpired) expiryClass += ' expiry-expired';
+  else if (acc.expiry.daysLeft <= 3) expiryClass += ' expiry-warning';
+
+  return {
+    // 使用统一函数的结果
+    accountType: creditsInfo.accountType,
+    typeBadgeClass: creditsInfo.typeClass,
+    typeLabel: creditsInfo.accountType,
+    pointsHtml: creditsInfo.generateTableHTML(),
+    
+    // 其他样式
+    cardBoundHtml,
+    tokenHtml,
+    expiryClass
+  };
+}
+
+/**
+ * 生成账号行HTML
+ */
+function generateAccountRowHTML(acc, styles, isCurrentAccount = false) {
+  const rowClass = isCurrentAccount ? 'current-account-row' : '';
+
+  return `
+    <tr data-id="${acc.id}" class="${rowClass}">
+      <td style="width: 40px; text-align: center;" onclick="event.stopPropagation()">
+        <input type="checkbox" class="account-checkbox" data-email="${acc.email}" data-password="${acc.password}" onchange="updateSelectedBindCount()">
+      </td>
+      <td ondblclick="copyAccountRow('${acc.email}', '${acc.password}'); event.stopPropagation();" style="cursor: pointer;" title="双击复制账号密码">
+        <div class="account-email-cell">${acc.email}</div>
+      </td>
+      <td>
+        <span class="badge ${styles.typeBadgeClass}">${styles.typeLabel}</span>
+      </td>
+      <td>${styles.pointsHtml}</td>
+      <td>${styles.cardBoundHtml}</td>
+      <td>
+        <div class="${styles.expiryClass}">${acc.expiryDate}</div>
+      </td>
+      <td>${styles.tokenHtml}</td>
+      <td>
+        <div style="display:flex; align-items:center; gap:4px;">
+          <button class="action-btn primary" onclick="getAccountDetails('${acc.email}', '${acc.password}'); event.stopPropagation();" title="刷新信息">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M23 4v6h-6"></path>
+              <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path>
+            </svg>
+          </button>
+          <div style="position:relative;">
+            <button class="action-btn" onclick="toggleActionMenu(event, '${acc.id}')">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <circle cx="12" cy="12" r="1"></circle>
+                <circle cx="12" cy="5" r="1"></circle>
+                <circle cx="12" cy="19" r="1"></circle>
+              </svg>
+            </button>
+            <div class="action-menu" id="menu-${acc.id}">
+              <div class="action-menu-item" onclick="switchAccount('${acc.email}', '${acc.password}')">🔄 切号</div>
+              <div class="action-menu-item" onclick="viewAccount('${acc.email}', '${acc.password}')">📋 查看详情</div>
+              <div class="action-menu-item" onclick="editAccount('${acc.id}', '${acc.email}', '${acc.password}')">✏️ 编辑账号</div>
+              <div class="action-menu-item danger" onclick="deleteAccountFromTable('${acc.id}', '${acc.email}')">🗑️ 删除账号</div>
+            </div>
+          </div>
+        </div>
+      </td>
+    </tr>
+  `;
+}
+
 // ==================== 账号列表渲染 ====================
 async function renderAccounts() {
   const tbody = document.getElementById('accountsList');
   if (!tbody) return;
-
-  if (!accountsCache || accountsCache.length === 0) {
-    tbody.innerHTML = `
-      <tr>
-        <td colspan="9" style="text-align:center; padding:60px 20px; color:#86868b;">
-          <div style="font-size:15px; margin-bottom:8px;">暂无账号数据</div>
-          <div style="font-size:13px;">点击上方"添加账号"或"批量注册"开始使用</div>
-        </td>
-      </tr>
-    `;
-    return;
-  }
 
   // 获取当前登录账号（使用缓存避免重复调用）
   let currentEmail = currentEmailCache;
   if (!currentEmail) {
     try {
       const systemInfo = await ipcRenderer.invoke('get-system-info');
-      if (systemInfo && systemInfo.currentAccount && systemInfo.currentAccount.email) {
+      if (systemInfo.success && systemInfo.currentAccount?.email) {
         currentEmail = systemInfo.currentAccount.email;
         currentEmailCache = currentEmail; // 缓存结果
       }
@@ -236,141 +342,19 @@ async function renderAccounts() {
     }
   }
 
-  tbody.innerHTML = accountsCache.map((acc, index) => {
-    const expiry = calculateExpiry(acc.createdAt);
-    
-    // 格式化到期时间
-    const expiryDate = expiry.expiryDate.toLocaleString('zh-CN', {
-      year: 'numeric', 
-      month: '2-digit',
-      day: '2-digit',
-      hour: '2-digit',
-      minute: '2-digit',
-      hour12: false
-    }).replace(/\//g, '-');
-    
-    // 账号类型判断与徽章样式
-    let accountType = acc.accountType || '未知';
-    let typeBadgeClass = 'badge-type-free';
-    let typeLabel = 'Free';
+  // 检查是否有账号数据
+  if (!accountsCache || accountsCache.length === 0) {
+    tbody.innerHTML = generateEmptyStateHTML(9, '暂无账号数据', '点击上方"添加账号"或"批量注册"开始使用');
+    return;
+  }
 
-    if (acc.monthlyPromptCredits !== undefined) {
-      if (acc.monthlyPromptCredits >= 500) {
-        accountType = 'PRO';
-        typeBadgeClass = 'badge-type-pro';
-        typeLabel = 'PRO';
-      } else if (acc.monthlyPromptCredits === 100) {
-        accountType = 'Trial';
-        typeBadgeClass = 'badge-type-trial';
-        typeLabel = 'Trial';
-      } else if (acc.monthlyPromptCredits === 25) {
-        accountType = 'Free';
-        typeBadgeClass = 'badge-type-free';
-        typeLabel = 'Free';
-      }
-    }
-    
-    // 积分显示
-    let pointsHtml;
-    if (acc.usedPromptCredits !== undefined && acc.monthlyPromptCredits !== undefined && acc.monthlyPromptCredits > 0) {
-      const usageRate = (acc.usedPromptCredits / acc.monthlyPromptCredits) * 100;
-      let colorClass = '#34c759'; // 绿色
-      
-      if (usageRate >= 100) {
-        colorClass = '#ff3b30'; // 红色
-      } else if (usageRate > 90) {
-        colorClass = '#ff9500'; // 橙色
-      }
-
-      pointsHtml = `
-        <div class="points-wrapper">
-          <div class="points-text" style="color:${colorClass}">${acc.usedPromptCredits} / ${acc.monthlyPromptCredits}</div>
-          <div class="points-bar-bg">
-            <div class="points-bar-fill" style="width:${Math.min(usageRate, 100)}%; background:${colorClass}"></div>
-          </div>
-        </div>
-      `;
-    } else {
-      pointsHtml = '<span style="color:#86868b">-</span>';
-    }
-    
-    // 绑卡状态
-    let cardBoundHtml;
-    if (acc.monthlyPromptCredits >= 500) {
-      cardBoundHtml = '<span class="badge badge-card-bound">已绑卡</span>';
-    } else if (acc.needsManualBinding === true) {
-      cardBoundHtml = `
-        <div style="display:flex; gap:4px;">
-          <button onclick="markCardBound('${acc.email}', true); event.stopPropagation();" class="badge badge-card-bound" style="border:none; cursor:pointer;">✓</button>
-          <button onclick="markCardBound('${acc.email}', false); event.stopPropagation();" class="badge badge-card-error" style="border:none; cursor:pointer;">✕</button>
-        </div>
-      `;
-    } else if (acc.cardBound === true) {
-      cardBoundHtml = '<span class="badge badge-card-bound">已绑卡</span>';
-    } else if (acc.cardBound === false) {
-      cardBoundHtml = '<span class="badge badge-card-error">失败</span>';
-    } else {
-      cardBoundHtml = '<span class="badge badge-card-none">未绑</span>';
-    }
-    
-    // Token 状态
-    const tokenHtml = acc.accountType 
-      ? '<span style="color:#34c759; font-size:12px;">● 已获取</span>'
-      : '<span style="color:#86868b; font-size:12px;">○ 未获取</span>';
-      
-    // 到期时间样式
-    let expiryClass = 'expiry-cell';
-    if (expiry.isExpired) expiryClass += ' expiry-expired';
-    else if (expiry.daysLeft <= 3) expiryClass += ' expiry-warning';
-
-    // 检查是否为当前登录账号
+  // 渲染账号列表
+  tbody.innerHTML = accountsCache.map(acc => {
+    const formattedAcc = formatAccountData(acc);
+    const styles = calculateAccountStyles(formattedAcc);
     const isCurrentAccount = currentEmail && acc.email === currentEmail;
-    const rowClass = isCurrentAccount ? 'current-account-row' : '';
-
-    return `
-      <tr data-id="${acc.id}" class="${rowClass}">
-        <td style="width: 40px; text-align: center;" onclick="event.stopPropagation()">
-          <input type="checkbox" class="account-checkbox" data-email="${acc.email}" data-password="${acc.password}" onchange="updateSelectedBindCount()">
-        </td>
-        <td ondblclick="copyAccountRow('${acc.email}', '${acc.password}'); event.stopPropagation();" style="cursor: pointer;" title="双击复制账号密码">
-          <div class="account-email-cell">${acc.email}</div>
-        </td>
-        <td>
-          <span class="badge ${typeBadgeClass}">${typeLabel}</span>
-        </td>
-        <td>${pointsHtml}</td>
-        <td>${cardBoundHtml}</td>
-        <td>
-          <div class="${expiryClass}">${expiryDate}</div>
-        </td>
-        <td>${tokenHtml}</td>
-        <td>
-          <div style="display:flex; align-items:center; gap:4px;">
-            <button class="action-btn primary" onclick="getAccountDetails('${acc.email}', '${acc.password}'); event.stopPropagation();" title="刷新信息">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <path d="M23 4v6h-6"></path>
-                <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path>
-              </svg>
-            </button>
-            <div style="position:relative;">
-              <button class="action-btn" onclick="toggleActionMenu(event, '${acc.id}')">
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                  <circle cx="12" cy="12" r="1"></circle>
-                  <circle cx="12" cy="5" r="1"></circle>
-                  <circle cx="12" cy="19" r="1"></circle>
-                </svg>
-              </button>
-              <div class="action-menu" id="menu-${acc.id}">
-                <div class="action-menu-item" onclick="switchAccount('${acc.email}', '${acc.password}')">🔄 切号</div>
-                <div class="action-menu-item" onclick="viewAccount('${acc.email}', '${acc.password}')">📋 查看详情</div>
-                <div class="action-menu-item" onclick="editAccount('${acc.id}', '${acc.email}', '${acc.password}')">✏️ 编辑账号</div>
-                <div class="action-menu-item danger" onclick="deleteAccountFromTable('${acc.id}', '${acc.email}')">🗑️ 删除账号</div>
-              </div>
-            </div>
-          </div>
-        </td>
-      </tr>
-    `;
+    
+    return generateAccountRowHTML(formattedAcc, styles, isCurrentAccount);
   }).join('');
 }
 
@@ -556,6 +540,12 @@ function viewAccount(email, password) {
     createdTime = new Date(account.createdAt).toLocaleString('zh-CN');
   }
 
+  // 格式化最后刷新时间
+  let lastRefreshedTime = '从未刷新';
+  if (account.lastRefreshed) {
+    lastRefreshedTime = new Date(account.lastRefreshed).toLocaleString('zh-CN');
+  }
+
   // 格式化积分信息
   let promptCredits = '未知';
   if (account.usedPromptCredits !== undefined && account.monthlyPromptCredits !== undefined) {
@@ -613,6 +603,11 @@ function viewAccount(email, password) {
       <div style="margin-bottom: 8px;">
         <span style="color: #86868b;">📅 创建时间: </span>
         <span style="color: #1d1d1f;">${createdTime}</span>
+      </div>
+      
+      <div style="margin-bottom: 8px;">
+        <span style="color: #86868b;">🔄 最后刷新: </span>
+        <span style="color: #1d1d1f;">${lastRefreshedTime}</span>
       </div>
       
       <div style="margin-bottom: 8px;">
@@ -829,7 +824,10 @@ async function getAccountDetails(email, password) {
             usedPoints: data.usedPoints,
             maxPoints: data.maxPoints,
             userId: data.userId,
-            name: data.name
+            name: data.name,
+            lastRefreshed: new Date().toISOString(), // 添加最后刷新时间
+            createdAt: data.createdAt || accounts[accountIndex].createdAt, // 更新创建时间
+            expiresAt: data.expiresAt || accounts[accountIndex].expiresAt // 更新到期时间
           };
           
           // 总是更新绑卡状态（根据积分判断）
@@ -1055,14 +1053,14 @@ async function importAccounts() {
   let duplicateCount = 0;
 
   try {
-    // 解析JSON格式
-    const data = JSON.parse(text);
+    // 解析JSON格式 - 只支持直接数组格式
+    const accounts = JSON.parse(text);
     
-    if (!data.accounts || !Array.isArray(data.accounts)) {
-      throw new Error('JSON格式错误：缺少accounts数组');
+    if (!Array.isArray(accounts)) {
+      throw new Error('JSON格式错误：应为账号数组格式 [{"email": "xxx", "password": "xxx"}]');
     }
 
-    for (const acc of data.accounts) {
+    for (const acc of accounts) {
       if (!acc.email || !acc.password) {
         failCount++;
         continue;
@@ -1079,6 +1077,7 @@ async function importAccounts() {
         const result = await ipcRenderer.invoke('add-account', {
           email: acc.email,
           password: acc.password
+          // 不设置 createdAt，让它保持未知状态，等刷新后获取真实数据
         });
         
         if (result.success) {
@@ -1123,34 +1122,35 @@ async function importAccounts() {
   }
 }
 
-// 导出账号
+// 导出选中账号
 async function exportAccounts() {
-  await ipcRenderer.invoke('log-message', { message: '开始导出账号...', type: 'info' });
+  await ipcRenderer.invoke('log-message', { message: '开始导出选中账号...', type: 'info' });
 
-  if (!accountsCache || accountsCache.length === 0) {
-    showAlertDialog('导出失败', '暂无账号可导出', 'warning');
+  // 获取选中的账号
+  const selectedAccounts = getSelectedAccounts();
+  
+  if (selectedAccounts.length === 0) {
+    showAlertDialog('导出失败', '请先选择要导出的账号', 'warning');
     return;
   }
 
-  // 只导出邮箱和密码
-  const exportData = {
-    accounts: accountsCache.map(acc => ({
-      email: acc.email,
-      password: acc.password
-    }))
-  };
+  // 导出为直接的数组格式
+  const exportData = selectedAccounts.map(acc => ({
+    email: acc.email,
+    password: acc.password
+  }));
 
   const content = JSON.stringify(exportData, null, 2);
   const blob = new Blob([content], { type: 'application/json' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
-  a.download = `accounts-${new Date().toISOString().split('T')[0]}.json`;
+  a.download = `selected-accounts-${new Date().toISOString().split('T')[0]}.json`;
   a.click();
   URL.revokeObjectURL(url);
 
-  await ipcRenderer.invoke('log-message', { message: `成功导出 ${accountsCache.length} 个账号`, type: 'success' });
-  showToast('账号已导出', 'success');
+  await ipcRenderer.invoke('log-message', { message: `成功导出 ${selectedAccounts.length} 个选中账号`, type: 'success' });
+  showToast(`已导出 ${selectedAccounts.length} 个账号`, 'success');
 }
 
 // 重复的getAccountDetails函数已删除，使用上面的完整版本

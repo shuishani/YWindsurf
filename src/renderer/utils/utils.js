@@ -43,12 +43,39 @@ function showToast(message, type = 'success') {
   }, 2000);
 }
 
-// 计算到期时间（Pro试用期为13天）
-function calculateExpiry(createdAt) {
+// 计算到期时间（Pro试用期为14天）
+function calculateExpiry(createdAt, expiresAt = null) {
+  // 如果有直接的到期时间，优先使用
+  if (expiresAt) {
+    const expiryDate = new Date(expiresAt);
+    const now = new Date();
+    const daysLeft = Math.ceil((expiryDate - now) / (1000 * 60 * 60 * 24));
+    const isExpired = daysLeft <= 0;
+    
+    return {
+      expiryDate,
+      daysLeft,
+      isExpired,
+      expiryText: isExpired ? '已到期' : `剩余${daysLeft}天`,
+      expiryColor: isExpired ? '#e74c3c' : (daysLeft <= 3 ? '#ff9500' : '#007aff')
+    };
+  }
+  
+  // 如果没有创建时间，返回未知状态
+  if (!createdAt) {
+    return {
+      expiryDate: null,
+      daysLeft: null,
+      isExpired: false,
+      expiryText: '未知',
+      expiryColor: '#86868b'
+    };
+  }
+  
   const created = new Date(createdAt);
   const now = new Date();
   const expiryDate = new Date(created);
-  expiryDate.setDate(expiryDate.getDate() + 13); // 13天后到期
+  expiryDate.setDate(expiryDate.getDate() + 14); // 14天后到期
   
   const daysLeft = Math.ceil((expiryDate - now) / (1000 * 60 * 60 * 24));
   const isExpired = daysLeft <= 0;
@@ -97,12 +124,240 @@ function addLog(message, type = 'info') {
   });
 }
 
-// 导出模块并暴露到全局
+/**
+ * 统一的积分和PRO账号处理函数
+ * @param {number} usedCredits - 已使用积分
+ * @param {number} totalCredits - 总积分限额
+ * @returns {Object} 包含账号类型、积分信息、颜色等的完整对象
+ */
+function processAccountCredits(usedCredits, totalCredits) {
+  const used = usedCredits || 0;
+  const total = totalCredits || 0;
+  
+  // 1. 账号类型判断
+  let accountType = 'Free';
+  let typeClass = 'badge-type-free';
+  let isPro = false;
+  
+  if (total >= 500) {
+    accountType = 'PRO';
+    typeClass = 'badge-type-pro';
+    isPro = true;
+  } else if (total === 100) {
+    accountType = 'Trial';
+    typeClass = 'badge-type-trial';
+    isPro = true;
+  } else if (total === 25) {
+    accountType = 'Free';
+    typeClass = 'badge-type-free';
+    isPro = false;
+  }
+  
+  // 2. 积分计算
+  let hasCreditsData = total > 0;
+  let percent = 0;
+  let color = '#86868b'; // 默认灰色
+  
+  if (hasCreditsData) {
+    percent = Math.round((used / total) * 100);
+    
+    // 3. 颜色计算
+    if (percent >= 100) {
+      color = '#ff3b30'; // 红色 - 已用完
+    } else if (percent > 90) {
+      color = '#ff9500'; // 橙色 - 即将用完
+    } else {
+      color = '#34c759'; // 绿色 - 正常
+    }
+  }
+  
+  return {
+    // 账号类型信息
+    accountType,
+    typeClass,
+    isPro,
+    
+    // 积分数据
+    used,
+    total,
+    percent,
+    hasCreditsData,
+    
+    // 显示信息
+    color,
+    displayText: hasCreditsData ? `${used} / ${total}` : '- / -',
+    displayPercent: hasCreditsData ? `(${percent}%)` : '(-)',
+    
+    // 用于首页DOM更新的方法
+    updateHomePage: function(pointsElement, percentElement, barElement) {
+      if (pointsElement) {
+        pointsElement.textContent = this.displayText;
+        pointsElement.style.color = this.color;
+      }
+      if (percentElement) {
+        percentElement.textContent = this.displayPercent;
+      }
+      if (barElement) {
+        barElement.style.width = `${this.percent}%`;
+        barElement.style.background = this.color;
+      }
+    },
+    
+    // 用于账号管理页面HTML生成的方法
+    generateTableHTML: function() {
+      if (!this.hasCreditsData) {
+        return '<span style="color:#86868b">-</span>';
+      }
+      
+      return `
+        <div class="points-wrapper">
+          <div class="points-text" style="color:${this.color}">${this.displayText}</div>
+          <div class="points-bar-bg">
+            <div class="points-bar-fill" style="width:${Math.min(this.percent, 100)}%; background:${this.color}"></div>
+          </div>
+        </div>
+      `;
+    }
+  };
+}
+
+/**
+ * 统一的时间格式化函数
+ * @param {string|Date} date - 时间
+ * @param {Object} options - 格式化选项
+ * @returns {string} 格式化后的时间字符串
+ */
+function formatDateTime(date, options = {}) {
+  if (!date) return '未知';
+  
+  const defaultOptions = {
+    year: 'numeric', 
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+    ...options
+  };
+  
+  return new Date(date).toLocaleString('zh-CN', defaultOptions).replace(/\//g, '-');
+}
+
+/**
+ * 统一的错误处理函数
+ * @param {Error} error - 错误对象
+ * @param {string} context - 错误上下文
+ * @param {boolean} showToastMsg - 是否显示Toast提示
+ */
+async function handleError(error, context, showToastMsg = false) {
+  console.error(`${context}失败:`, error);
+  await ipcRenderer.invoke('log-message', { 
+    message: `${context}失败: ${error.message}`, 
+    type: 'error' 
+  });
+  if (showToastMsg) {
+    showToast(`${context}失败`, 'error');
+  }
+}
+
+/**
+ * 应用天数样式到元素
+ * @param {HTMLElement} element - DOM元素
+ * @param {number} days - 剩余天数
+ */
+function applyDaysLeftStyle(element, days) {
+  if (!element) return;
+  
+  const style = getDaysLeftStyle(days);
+  element.style.background = style.background;
+  element.style.color = style.color;
+  element.style.border = style.border;
+}
+
+/**
+ * 生成天数样式的内联CSS字符串
+ * @param {number} days - 剩余天数
+ * @returns {string} CSS样式字符串
+ */
+function getDaysLeftStyleString(days) {
+  const style = getDaysLeftStyle(days);
+  return `background: ${style.background}; color: ${style.color}; border: ${style.border};`;
+}
+
+/**
+ * 生成空状态HTML
+ * @param {number} colspan - 列数
+ * @param {string} title - 主标题
+ * @param {string} subtitle - 副标题
+ * @returns {string} 空状态HTML
+ */
+function generateEmptyStateHTML(colspan, title, subtitle) {
+  return `
+    <tr>
+      <td colspan="${colspan}" style="text-align:center; padding:40px; color:#86868b;">
+        <div style="font-size:14px; margin-bottom:8px;">${title}</div>
+        <div style="font-size:12px;">${subtitle}</div>
+      </td>
+    </tr>
+  `;
+}
+
+/**
+ * 获取天数剩余的样式（内部函数）
+ * @param {number} days - 剩余天数
+ * @returns {Object} 样式对象
+ */
+function getDaysLeftStyle(days) {
+  if (days >= 7) {
+    return {
+      background: '#d4edda',
+      color: '#155724',
+      border: '1px solid #c3e6cb'
+    };
+  } else if (days >= 3) {
+    return {
+      background: '#fff3cd',
+      color: '#856404',
+      border: '1px solid #ffeaa7'
+    };
+  } else if (days > 0) {
+    return {
+      background: '#f8d7da',
+      color: '#721c24',
+      border: '1px solid #f5c6cb'
+    };
+  } else {
+    return {
+      background: '#f5c6cb',
+      color: '#721c24',
+      border: '1px solid #dc3545'
+    };
+  }
+}
+
+module.exports = { 
+  addLog, 
+  showToast, 
+  calculateExpiry, 
+  processAccountCredits,
+  formatDateTime,
+  handleError,
+  applyDaysLeftStyle,
+  getDaysLeftStyleString,
+  generateEmptyStateHTML
+};
+
+// 导出到全局
 const utilsModule = {
   showToast,
   calculateExpiry,
-  addLog
+  addLog,
+  processAccountCredits,
+  formatDateTime,
+  handleError,
+  applyDaysLeftStyle,
+  getDaysLeftStyleString,
+  generateEmptyStateHTML
 };
 
 Object.assign(window, utilsModule);
-module.exports = utilsModule;

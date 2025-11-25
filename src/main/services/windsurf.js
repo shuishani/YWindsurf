@@ -138,27 +138,34 @@ class WindsurfManagerWindows {
       
       this.logger.info('检测到Windsurf正在运行,开始关闭');
       
-      // 第1次尝试: 正常关闭
-      this.logger.step(1, '正常关闭');
+      // 正常关闭
       await execPromise('taskkill /IM Windsurf.exe').catch(() => {});
       await this.sleep(2000);
       
-      if (!await this.checkWindsurfRunning()) {
+      // 检查是否成功关闭
+      const stillRunning1 = await this.checkWindsurfRunning();
+      if (!stillRunning1) {
         this.logger.success('Windsurf已成功关闭');
         return true;
       }
       
-      // 第2次尝试: 强制关闭
-      this.logger.step(2, '强制关闭');
+      // 强制关闭所有相关进程
       await execPromise('taskkill /F /IM Windsurf.exe').catch(() => {});
-      await this.sleep(2000);
+      await execPromise('taskkill /F /IM "Windsurf Helper.exe"').catch(() => {});
+      await execPromise('taskkill /F /IM "Windsurf Helper (GPU).exe"').catch(() => {});
+      await execPromise('taskkill /F /IM "Windsurf Helper (Renderer).exe"').catch(() => {});
+      await this.sleep(3000); // 增加等待时间
       
       if (!await this.checkWindsurfRunning()) {
         this.logger.success('Windsurf已强制关闭');
         return true;
       }
       
-      this.logger.error('Windsurf进程可能仍在运行，但将继续执行');
+      // 通过进程树关闭
+      await execPromise('wmic process where "name=\'Windsurf.exe\'" call terminate').catch(() => {});
+      await this.sleep(2000);
+      
+      this.logger.warning('Windsurf关闭流程完成，继续执行');
       return true;
       
     } catch (error) {
