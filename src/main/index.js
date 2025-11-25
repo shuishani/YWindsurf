@@ -4,9 +4,33 @@ const fs = require('fs').promises;
 const { registerAllIPC } = require('./ipc');
 const VersionChecker = require('./services/version-checker');
 
+// 添加命令行参数解决GPU和缓存问题
+app.commandLine.appendSwitch('--disable-gpu');
+app.commandLine.appendSwitch('--disable-gpu-sandbox');
+app.commandLine.appendSwitch('--disable-software-rasterizer');
+app.commandLine.appendSwitch('--disable-http-cache');
+app.commandLine.appendSwitch('--disable-gpu-process-crash-limit');
+app.commandLine.appendSwitch('--disable-features', 'VizDisplayCompositor');
+app.commandLine.appendSwitch('--disable-gpu-memory-buffer-compositor-resources');
+app.commandLine.appendSwitch('--disable-gpu-memory-buffer-video-frames');
+app.commandLine.appendSwitch('--disable-background-timer-throttling');
+app.commandLine.appendSwitch('--disable-renderer-backgrounding');
+app.commandLine.appendSwitch('--disable-backgrounding-occluded-windows');
+// 更彻底的GPU禁用
+app.commandLine.appendSwitch('--use-gl', 'swiftshader');
+app.commandLine.appendSwitch('--disable-accelerated-2d-canvas');
+app.commandLine.appendSwitch('--disable-accelerated-jpeg-decoding');
+app.commandLine.appendSwitch('--disable-accelerated-mjpeg-decode');
+app.commandLine.appendSwitch('--disable-accelerated-video-decode');
+app.commandLine.appendSwitch('--disable-gpu-compositing');
+app.commandLine.appendSwitch('--disable-gpu-rasterization');
+app.commandLine.appendSwitch('--disable-gpu-driver-bug-workarounds');
+
 // 统一使用 Windsurf userData 路径（账号数据已迁移）
-const windsurfUserDataPath = path.join(process.env.APPDATA, 'Windsurf');
-app.setPath('userData', windsurfUserDataPath);
+const windsurfPaths = require('../shared/config/windsurf-paths');
+// 取消自定义路径设置，使用Electron默认路径避免权限问题
+// const windsurfUserDataPath = windsurfPaths.getDataDir();
+// app.setPath('userData', windsurfUserDataPath);
 
 // 标记IPC是否已注册
 let ipcRegistered = false;

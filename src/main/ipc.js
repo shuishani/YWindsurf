@@ -17,7 +17,17 @@ const { createTaggedLogger } = require('./utils/logger');
  * @param {Electron.BrowserWindow} mainWindow 
  */
 function registerAllIPC(app, mainWindow) {
-  const ACCOUNTS_FILE = path.join(app.getPath('userData'), 'accounts.json');
+  // 统一路径配置 - 避免重复引用
+  const windsurfPaths = require('../shared/config/windsurf-paths');
+  const JSON_DATA_DIR = windsurfPaths.getJsonDataDir();
+  const WINDSURF_DATA_DIR = windsurfPaths.getDataDir();
+  const WINDSURF_CACHE_DIR = windsurfPaths.getCacheDir();
+  
+  // 常用文件路径
+  const ACCOUNTS_FILE = path.join(JSON_DATA_DIR, 'accounts.json');
+  const CARDS_FILE = path.join(JSON_DATA_DIR, 'virtual-cards.json');
+  const SETTINGS_FILE = path.join(JSON_DATA_DIR, 'settings.json');
+  const CURRENT_LOGIN_FILE = path.join(WINDSURF_DATA_DIR, 'current_login.json');
   
   // 创建带标签的日志实例
   const systemLogger = createTaggedLogger('系统管理');
@@ -38,12 +48,43 @@ function registerAllIPC(app, mainWindow) {
 
   // 注册基础IPC处理器（虚拟卡管理在后面）
 
-  // ==================== 语言设置 ====================
+  // ==================== 统一设置管理 ====================
+
+  // 读取设置文件
+  async function getSettings() {
+    try {
+      const data = await fs.readFile(SETTINGS_FILE, 'utf-8');
+      return JSON.parse(data);
+    } catch (error) {
+      // 返回默认设置
+      return {
+        language: 'zh-CN',
+        windsurfPath: '',
+        useCustomWindsurfPath: false,
+        dataPath: JSON_DATA_DIR,
+        useCustomDataPath: false,
+        emailDomains: [],
+        emailConfig: {
+          host: '',
+          port: 993,
+          user: '',
+          password: ''
+        }
+      };
+    }
+  }
+
+  // 保存设置文件
+  async function saveSettings(settings) {
+    await fs.writeFile(SETTINGS_FILE, JSON.stringify(settings, null, 2), 'utf-8');
+  }
+
+  // 语言设置
   ipcMain.handle('save-language', async (event, language) => {
     try {
-      const userDataPath = app.getPath('userData');
-      const languageFile = path.join(userDataPath, 'language.json');
-      await fs.writeFile(languageFile, JSON.stringify({ language }));
+      const settings = await getSettings();
+      settings.language = language;
+      await saveSettings(settings);
       return { success: true };
     } catch (error) {
       return { success: false, error: error.message };
@@ -52,11 +93,8 @@ function registerAllIPC(app, mainWindow) {
 
   ipcMain.handle('get-language', async () => {
     try {
-      const userDataPath = app.getPath('userData');
-      const languageFile = path.join(userDataPath, 'language.json');
-      const data = await fs.readFile(languageFile, 'utf-8');
-      const config = JSON.parse(data);
-      return { success: true, language: config.language };
+      const settings = await getSettings();
+      return { success: true, language: settings.language };
     } catch (error) {
       return { success: false, language: 'zh-CN' };
     }
@@ -65,18 +103,8 @@ function registerAllIPC(app, mainWindow) {
   // ==================== 账号管理 ====================
   ipcMain.handle('get-accounts', async () => {
     try {
-      systemLogger.info(`📧 账号数据获取地址: ${ACCOUNTS_FILE}`);
-      systemLogger.info(`正在读取账号文件: ${ACCOUNTS_FILE}`);
       const data = await fs.readFile(ACCOUNTS_FILE, 'utf-8');
       const accounts = JSON.parse(data);
-      systemLogger.info(`成功读取 ${accounts.length} 个账号`);
-      
-      // 显示前5个邮箱地址作为示例
-      if (accounts.length > 0) {
-        const emailSample = accounts.slice(0, 5).map(acc => acc.email).join(', ');
-        systemLogger.info(`📧 邮箱地址示例: ${emailSample}${accounts.length > 5 ? '...' : ''}`);
-      }
-      
       return accounts;
     } catch (error) {
       systemLogger.error(`读取账号文件失败: ${error.message}`);
@@ -136,9 +164,7 @@ function registerAllIPC(app, mainWindow) {
   // ==================== Windsurf管理 ====================
   ipcMain.handle('clear-windsurf', async () => {
     try {
-      const WINDSURF_CONFIG = path.join(process.env.APPDATA, 'Windsurf');
-      const WINDSURF_CACHE = path.join(process.env.LOCALAPPDATA, 'Windsurf', 'Cache');
-      const pathsToDelete = [WINDSURF_CONFIG, WINDSURF_CACHE];
+      const pathsToDelete = [WINDSURF_DATA_DIR, path.join(WINDSURF_CACHE_DIR, 'Cache')];
       
       for (const dirPath of pathsToDelete) {
         try {
@@ -170,9 +196,8 @@ function registerAllIPC(app, mainWindow) {
       // 执行自动切号
       const switchResult = await switcher.switchAccountAdvanced(account.email, account.password);
       
-      // 保存当前登录信息
-      const loginFile = path.join(app.getPath('userData'), 'current_login.json');
-      await fs.writeFile(loginFile, JSON.stringify(account, null, 2));
+      // 保存当前登录信息到Windsurf数据目录
+      await fs.writeFile(CURRENT_LOGIN_FILE, JSON.stringify(account, null, 2));
       
       return { 
         success: true, 
@@ -267,8 +292,7 @@ function registerAllIPC(app, mainWindow) {
 
   ipcMain.handle('get-current-login', async () => {
     try {
-      const loginFile = path.join(app.getPath('userData'), 'current_login.json');
-      const data = await fs.readFile(loginFile, 'utf-8');
+      const data = await fs.readFile(CURRENT_LOGIN_FILE, 'utf-8');
       return JSON.parse(data);
     } catch (error) {
       return null;
@@ -285,38 +309,83 @@ function registerAllIPC(app, mainWindow) {
     }
   });
 
-  // 从原始路径读取邮箱配置
+  // 邮箱配置
   ipcMain.handle('get-email-config', async () => {
     try {
-      const originalUserData = path.join(process.env.APPDATA, 'windsurf-account-switcher');
-      const configFile = path.join(originalUserData, 'email-config.json');
+      const settings = await getSettings();
       
-      const data = await fs.readFile(configFile, 'utf-8');
-      return data;
+      // 返回前端期望的完整配置格式
+      const config = {
+        emailDomains: settings.emailDomains || [],
+        emailConfig: settings.emailConfig || {
+          host: '',
+          port: 993,
+          user: '',
+          password: ''
+        }
+      };
+      
+      return JSON.stringify(config);
     } catch (error) {
+      systemLogger.error(`📧 邮箱配置读取失败: ${error.message}`);
       return null; // 文件不存在或读取失败
     }
   });
 
-  // 保存邮箱配置到原始路径
   ipcMain.handle('save-email-config', async (event, config) => {
     try {
-      const originalUserData = path.join(process.env.APPDATA, 'windsurf-account-switcher');
-      await fs.mkdir(originalUserData, { recursive: true });
+      const settings = await getSettings();
+      const configObj = typeof config === 'string' ? JSON.parse(config) : config;
       
-      const configFile = path.join(originalUserData, 'email-config.json');
-      await fs.writeFile(configFile, JSON.stringify(config, null, 2), 'utf-8');
+      // 更新邮箱配置和域名
+      if (configObj.emailConfig) {
+        settings.emailConfig = configObj.emailConfig;
+      }
+      if (configObj.emailDomains) {
+        settings.emailDomains = configObj.emailDomains;
+      }
+      
+      await saveSettings(settings);
       
       return { success: true };
     } catch (error) {
+      systemLogger.error(`📧 邮箱配置保存失败: ${error.message}`);
       return { success: false, message: error.message };
+    }
+  });
+
+  // 获取完整设置
+  ipcMain.handle('get-settings', async () => {
+    try {
+      const settings = await getSettings();
+      return { success: true, settings };
+    } catch (error) {
+      return { success: false, error: error.message };
+    }
+  });
+
+  // 保存完整设置
+  ipcMain.handle('save-settings', async (event, newSettings) => {
+    try {
+      await saveSettings(newSettings);
+      
+      // 同时更新 windsurfPaths 的配置
+      if (newSettings.windsurfPath !== undefined) {
+        windsurfPaths.setCustomInstallDir(newSettings.windsurfPath || null);
+      }
+      if (newSettings.dataPath !== undefined) {
+        windsurfPaths.setCustomDataDir(newSettings.dataPath || null);
+      }
+      
+      return { success: true };
+    } catch (error) {
+      return { success: false, error: error.message };
     }
   });
 
   // 更新所有账号的绑卡状态
   ipcMain.handle('update-all-binding-status', async () => {
     try {
-      const ACCOUNTS_FILE = path.join(app.getPath('userData'), 'accounts.json');
       const data = await fs.readFile(ACCOUNTS_FILE, 'utf-8');
       const accounts = JSON.parse(data);
       
@@ -402,6 +471,145 @@ function registerAllIPC(app, mainWindow) {
 
   // 旧的半自动切号已删除，使用新的完全自动切号 (switch-account)
 
+  // ==================== Windsurf路径管理 ====================
+  ipcMain.handle('get-windsurf-path', async () => {
+    try {
+      return windsurfPaths.getExecutablePath();
+    } catch (error) {
+      return null;
+    }
+  });
+
+  ipcMain.handle('get-custom-windsurf-path', async () => {
+    try {
+      return windsurfPaths.customInstallDir;
+    } catch (error) {
+      return null;
+    }
+  });
+
+  ipcMain.handle('set-custom-windsurf-path', async (event, customPath) => {
+    try {
+      
+      // 如果是重置（空字符串），直接设置
+      if (!customPath) {
+        windsurfPaths.setCustomInstallDir(customPath);
+        return { success: true };
+      }
+      
+      // 验证自定义路径是否存在
+      const fs = require('fs');
+      const path = require('path');
+      
+      if (!fs.existsSync(customPath)) {
+        return { success: false, error: '路径不存在' };
+      }
+      
+      // 检查是否包含 Windsurf.exe
+      const exePath = path.join(customPath, 'Windsurf.exe');
+      if (!fs.existsSync(exePath)) {
+        return { success: false, error: '请选择有效的Windsurf安装目录' };
+      }
+      
+      windsurfPaths.setCustomInstallDir(customPath);
+      return { success: true };
+    } catch (error) {
+      return { success: false, error: error.message };
+    }
+  });
+
+  ipcMain.handle('select-windsurf-path', async () => {
+    try {
+      const { dialog } = require('electron');
+      const result = await dialog.showOpenDialog(mainWindow, {
+        title: '选择Windsurf安装目录',
+        properties: ['openDirectory'],
+        defaultPath: process.env.LOCALAPPDATA
+      });
+      
+      if (!result.canceled && result.filePaths.length > 0) {
+        return result.filePaths[0];
+      }
+      return null;
+    } catch (error) {
+      return null;
+    }
+  });
+
+  // ==================== Data路径管理 ====================
+  ipcMain.handle('get-custom-data-path', async () => {
+    try {
+      // 返回实际解析后的路径，而不是包含环境变量的路径
+      return windsurfPaths.getJsonDataDir();
+    } catch (error) {
+      return null;
+    }
+  });
+
+  ipcMain.handle('set-custom-data-path', async (event, customPath) => {
+    try {
+      // 如果是重置（空字符串），直接设置
+      if (!customPath) {
+        windsurfPaths.setCustomDataDir(customPath);
+        
+        // 重新加载配置
+        windsurfPaths.loadConfig();
+        
+        // 通知前端刷新数据
+        if (mainWindow) {
+          mainWindow.webContents.send('data-path-changed');
+        }
+        
+        return { success: true };
+      }
+      
+      // 验证自定义路径是否存在
+      const fs = require('fs');
+      
+      if (!fs.existsSync(customPath)) {
+        return { success: false, error: '路径不存在' };
+      }
+      
+      // 检查是否为目录
+      const stat = fs.statSync(customPath);
+      if (!stat.isDirectory()) {
+        return { success: false, error: '请选择一个有效的目录' };
+      }
+      
+      windsurfPaths.setCustomDataDir(customPath);
+      
+      // 重新加载配置
+      windsurfPaths.loadConfig();
+      
+      // 通知前端刷新数据
+      if (mainWindow) {
+        mainWindow.webContents.send('data-path-changed');
+      }
+      
+      return { success: true };
+    } catch (error) {
+      return { success: false, error: error.message };
+    }
+  });
+
+  ipcMain.handle('select-data-path', async () => {
+    try {
+      const { dialog } = require('electron');
+      const result = await dialog.showOpenDialog(mainWindow, {
+        title: '选择Data存储目录',
+        properties: ['openDirectory'],
+        defaultPath: process.env.USERPROFILE
+      });
+      
+      if (!result.canceled && result.filePaths.length > 0) {
+        return result.filePaths[0];
+      }
+      return null;
+    } catch (error) {
+      return null;
+    }
+  });
+
   // ==================== 外部链接 ====================
   ipcMain.handle('open-external', async (event, url) => {
     const { shell } = require('electron');
@@ -409,17 +617,13 @@ function registerAllIPC(app, mainWindow) {
   });
 
   // ==================== 虚拟卡管理 ====================
-  const CARDS_FILE = path.join(process.env.APPDATA, 'Windsurf', 'virtual-cards.json');
 
   ipcMain.handle('get-cards', async () => {
     try {
-      systemLogger.info(`💳 虚拟卡获取地址: ${CARDS_FILE}`);
       const data = await fs.readFile(CARDS_FILE, 'utf-8');
       const cards = JSON.parse(data);
-      systemLogger.info(`成功读取 ${cards.length} 张虚拟卡`);
       return { success: true, cards: cards };
     } catch (error) {
-      systemLogger.info(`虚拟卡文件不存在或为空，返回空数组: ${error.message}`);
       // 文件不存在，返回空数组
       return { success: true, cards: [] };
     }
@@ -438,10 +642,9 @@ function registerAllIPC(app, mainWindow) {
   ipcMain.handle('refresh-account-credits', async (event, email) => {
     try {
       // 1. 读取账号列表
-      const accountsPath = path.join(app.getPath('userData'), 'accounts.json');
       let accounts = [];
       try {
-        const data = await fs.readFile(accountsPath, 'utf-8');
+        const data = await fs.readFile(ACCOUNTS_FILE, 'utf-8');
         accounts = JSON.parse(data);
       } catch (e) {
         return { success: false, error: '读取账号列表失败' };
@@ -481,7 +684,7 @@ function registerAllIPC(app, mainWindow) {
       }
       
       // 7. 保存到文件
-      await fs.writeFile(accountsPath, JSON.stringify(accounts, null, 2));
+      await fs.writeFile(ACCOUNTS_FILE, JSON.stringify(accounts, null, 2));
       
       return { 
         success: true,
@@ -500,11 +703,10 @@ function registerAllIPC(app, mainWindow) {
   // 标记绑卡状态
   ipcMain.handle('mark-card-bound', async (event, { email, success }) => {
     try {
-      const accountsPath = path.join(app.getPath('userData'), 'accounts.json');
       let accounts = [];
       
-      if (fs.existsSync(accountsPath)) {
-        const data = fs.readFileSync(accountsPath, 'utf-8');
+      if (fs.existsSync(ACCOUNTS_FILE)) {
+        const data = fs.readFileSync(ACCOUNTS_FILE, 'utf-8');
         accounts = JSON.parse(data);
       }
       
@@ -518,7 +720,7 @@ function registerAllIPC(app, mainWindow) {
           account.needsManualBinding = false;
           
           // 保存
-          fs.writeFileSync(accountsPath, JSON.stringify(accounts, null, 2));
+          fs.writeFileSync(ACCOUNTS_FILE, JSON.stringify(accounts, null, 2));
           
           return { success: false, error: `积分${account.monthlyPromptCredits} < 500，绑卡验证失败` };
         } else {
@@ -526,7 +728,7 @@ function registerAllIPC(app, mainWindow) {
           account.needsManualBinding = false;
           
           // 保存
-          fs.writeFileSync(accountsPath, JSON.stringify(accounts, null, 2));
+          fs.writeFileSync(ACCOUNTS_FILE, JSON.stringify(accounts, null, 2));
           
           return { success: true };
         }

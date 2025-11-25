@@ -18,8 +18,9 @@ let mainWindow;
 // 保存失败账号的浏览器实例，用于重试
 const failedAccountBrowsers = new Map(); // key: email, value: { page, context, browser }
 
-// 虚拟卡文件路径（使用 Windsurf userData 路径）
-const CARDS_FILE = path.join(process.env.APPDATA, 'Windsurf', 'virtual-cards.json');
+// 虚拟卡文件路径（使用统一路径配置）
+const windsurfPaths = require('../../shared/config/windsurf-paths');
+const CARDS_FILE = path.join(windsurfPaths.getDataDir(), 'virtual-cards.json');
 
 /**
  * 根据ID选择指定的虚拟卡
@@ -563,7 +564,8 @@ function initStripeHandlers(win) {
  */
 async function updateAccountBindStatus(email, success) {
   try {
-    const accountsPath = path.join(app.getPath('userData'), 'accounts.json');
+    const windsurfPaths = require('../../shared/config/windsurf-paths');
+    const accountsPath = path.join(windsurfPaths.getJsonDataDir(), 'accounts.json');
     const data = await fs.readFile(accountsPath, 'utf-8');
     const accounts = JSON.parse(data);
     

@@ -4,6 +4,7 @@ const { exec } = require('child_process');
 const util = require('util');
 const execPromise = util.promisify(exec);
 const { createTaggedLogger } = require('../utils/logger');
+const windsurfPaths = require('../../shared/config/windsurf-paths');
 
 /**
  * Windsurf管理器 - Windows版本
@@ -16,24 +17,15 @@ class WindsurfManagerWindows {
     // 使用带标签的logger实例
     this.logger = createTaggedLogger(tag);
     
-    // Windows 环境变量
-    this.userProfile = process.env.USERPROFILE;
-    this.appData = process.env.APPDATA;
-    this.localAppData = process.env.LOCALAPPDATA;
+    // 使用简单的路径配置
+    this.windsurfPaths = windsurfPaths;
     
-    // Windsurf 应用路径（Windows 常见安装位置）
-    this.windsurfAppPaths = [
-      path.join(this.localAppData, 'Programs', 'Windsurf', 'Windsurf.exe'),
-      path.join(process.env.PROGRAMFILES, 'Windsurf', 'Windsurf.exe'),
-      path.join(process.env['PROGRAMFILES(X86)'], 'Windsurf', 'Windsurf.exe')
-    ];
-    
-    // Windsurf 相关路径（Windows）
+    // Windsurf 相关路径
     this.paths = {
-      appSupport: path.join(this.appData, 'Windsurf'),
-      cache: path.join(this.localAppData, 'Windsurf', 'Cache'),
-      userData: path.join(this.appData, 'Windsurf', 'User'),
-      logs: path.join(this.appData, 'Windsurf', 'logs')
+      appSupport: this.windsurfPaths.getDataDir(),
+      cache: path.join(this.windsurfPaths.getCacheDir(), 'Cache'),
+      userData: path.join(this.windsurfPaths.getDataDir(), 'User'),
+      logs: path.join(this.windsurfPaths.getDataDir(), 'logs')
     };
     
     // 需要删除的子目录
@@ -803,7 +795,7 @@ class WindsurfManagerWindows {
       
       // 启动 Windsurf
       const { spawn } = require('child_process');
-      const windsurfPath = path.join(process.env.LOCALAPPDATA, 'Programs', 'Windsurf', 'Windsurf.exe');
+      const windsurfPath = this.windsurfPaths.getExecutablePath();
       
       // 检查 Windsurf 可执行文件是否存在
       try {

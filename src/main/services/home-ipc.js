@@ -48,28 +48,31 @@ function registerHomeIPC(app) {
   // 获取系统信息
   ipcMain.handle('get-system-info', async () => {
     try {
-      // 检测Windsurf安装路径
+      // 使用统一的路径配置获取Windsurf安装路径
       let windsurfPath = '';
-      const possiblePaths = [
-        path.join(process.env.LOCALAPPDATA, 'Programs', 'Windsurf'),
-        path.join(process.env.APPDATA, 'Windsurf'),
-        'C:\\Program Files\\Windsurf'
-      ];
-      
-      for (const p of possiblePaths) {
-        try {
-          await fs.access(p);
-          windsurfPath = p;
-          break;
-        } catch (e) {
-          // 路径不存在，继续
+      try {
+        const windsurfPaths = require('../../shared/config/windsurf-paths');
+        const installDir = windsurfPaths.getInstallDir();
+        
+        if (installDir) {
+          // 显示路径，并标注是否为自定义路径
+          if (windsurfPaths.isUsingCustomPath()) {
+            windsurfPath = `${installDir} (自定义)`;
+          } else {
+            windsurfPath = `${installDir} (自动检测)`;
+          }
+        } else {
+          windsurfPath = '未检测到 - 请点击"手动选择"指定路径';
         }
+      } catch (error) {
+        windsurfPath = '检测失败';
       }
       
       // 读取storage.json获取机器码
       let machineId = '-';
       try {
-        const storagePath = path.join(process.env.APPDATA, 'Windsurf', 'User', 'globalStorage', 'storage.json');
+        const windsurfPaths = require('../../shared/config/windsurf-paths');
+        const storagePath = path.join(windsurfPaths.getDataDir(), 'User', 'globalStorage', 'storage.json');
         const storageData = await fs.readFile(storagePath, 'utf-8');
         const storage = JSON.parse(storageData);
         machineId = storage['telemetry.machineId'] || '-';
@@ -80,7 +83,8 @@ function registerHomeIPC(app) {
       // 获取当前登录账号信息
       let currentAccount = null;
       try {
-        const stateDbPath = path.join(process.env.APPDATA, 'Windsurf', 'User', 'globalStorage', 'state.vscdb');
+        const windsurfPaths = require('../../shared/config/windsurf-paths');
+        const stateDbPath = path.join(windsurfPaths.getDataDir(), 'User', 'globalStorage', 'state.vscdb');
         logger.info('获取账号信息');
         const stateData = await fs.readFile(stateDbPath, 'utf-8');
         
@@ -132,7 +136,8 @@ function registerHomeIPC(app) {
           
           try {
             // 从本地账号文件获取密码
-            const ACCOUNTS_FILE = path.join(app.getPath('userData'), 'accounts.json');
+            const windsurfPaths = require('../../shared/config/windsurf-paths');
+            const ACCOUNTS_FILE = path.join(windsurfPaths.getJsonDataDir(), 'accounts.json');
             const accountsData = await fs.readFile(ACCOUNTS_FILE, 'utf-8');
             const accounts = JSON.parse(accountsData);
             const localAccount = accounts.find(acc => acc.email === email);
@@ -212,8 +217,9 @@ function registerHomeIPC(app) {
   // 重置机器码
   ipcMain.handle('reset-machine-id', async () => {
     try {
-      const storagePath = path.join(process.env.APPDATA, 'Windsurf', 'User', 'globalStorage', 'storage.json');
-      const backupPath = path.join(app.getPath('userData'), 'storage_backup.json');
+      const windsurfPaths = require('../../shared/config/windsurf-paths');
+      const storagePath = path.join(windsurfPaths.getDataDir(), 'User', 'globalStorage', 'storage.json');
+      const backupPath = path.join(windsurfPaths.getDataDir(), 'storage_backup.json');
       
       // 先备份当前的 storage.json
       try {
@@ -272,8 +278,9 @@ function registerHomeIPC(app) {
   // 恢复机器码文件
   ipcMain.handle('restore-machine-file', async () => {
     try {
-      const storagePath = path.join(process.env.APPDATA, 'Windsurf', 'User', 'globalStorage', 'storage.json');
-      const backupPath = path.join(app.getPath('userData'), 'storage_backup.json');
+      const windsurfPaths = require('../../shared/config/windsurf-paths');
+      const storagePath = path.join(windsurfPaths.getDataDir(), 'User', 'globalStorage', 'storage.json');
+      const backupPath = path.join(windsurfPaths.getDataDir(), 'storage_backup.json');
       
       try {
         await fs.access(backupPath);

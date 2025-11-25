@@ -58,7 +58,12 @@
           <div style="background: #f5f5f7; border-radius: 12px; padding: 24px; margin-bottom: 20px; border: 1px solid #e5e5ea;">
             <h2 style="font-size: 18px; font-weight: 600; margin-bottom: 16px; color: #1d1d1f;">系统信息</h2>
             <div style="font-size: 13px; line-height: 2; color: #1d1d1f;">
-              <div><strong>安装路径：</strong><span id="windsurfPath" style="color: #6e6e73;">检测中...</span></div>
+              <div style="display: flex; align-items: center; gap: 8px;">
+                <strong>安装路径：</strong>
+                <span id="windsurfPath" style="color: #6e6e73; flex: 1;">检测中...</span>
+                <button class="modern-btn btn-secondary" onclick="changeWindsurfPath()">📁 手动选择</button>
+                <button class="modern-btn btn-secondary" onclick="resetWindsurfPath()">↩️ 重置</button>
+              </div>
               <div><strong>扩展版本：</strong><span id="extensionVersion" style="color: #6e6e73;">-</span> <strong style="margin-left: 20px;">软件版本：</strong><span id="softwareVersion" style="color: #6e6e73;">-</span></div>
               <div><strong>机器码：</strong><span id="machineId" style="color: #6e6e73; font-family: monospace; word-break: break-all;">-</span></div>
             </div>
@@ -371,52 +376,81 @@
       <div id="settings" class="tab-content">
         <div class="content-header">
           <div class="content-title">系统设置</div>
-          <div class="content-description">配置 IMAP 邮箱用于接收注册验证码</div>
+          <div class="content-description">配置系统参数和邮箱设置</div>
         </div>
         <div class="content-body">
-          <div class="form-group">
-            <label data-i18n="emailDomainList">邮箱域名列表（用于生成注册邮箱）</label>
-            <input type="text" id="newDomain" data-i18n-placeholder="domainInputPlaceholder" placeholder="输入域名，如: example.com">
-            <button class="btn btn-primary" onclick="addDomain()" style="margin-top:10px;" data-i18n="addDomainBtn">添加域名</button>
+          <!-- 邮箱配置 -->
+          <div class="settings-group">
+            <h3>邮箱配置</h3>
+            
+            <!-- 第一行：域名管理 -->
+            <div class="form-group compact">
+              <label data-i18n="emailDomainList">注册域名管理</label>
+              <div class="domain-input-group">
+                <input type="text" id="newDomain" data-i18n-placeholder="domainInputPlaceholder" placeholder="输入域名，如: example.com">
+                <button class="btn btn-primary" onclick="addDomain()" data-i18n="addDomainBtn">添加</button>
+              </div>
+              <div class="domain-list" id="domainList"></div>
+            </div>
+
+            <!-- 第二行：服务器配置 -->
+            <div class="form-row compact">
+              <div class="form-group">
+                <label data-i18n="imapServer">IMAP服务器</label>
+                <input type="text" id="imapHost" data-i18n-placeholder="imapHostPlaceholder" placeholder="imap.qq.com">
+              </div>
+              <div class="form-group">
+                <label data-i18n="port">端口</label>
+                <input type="number" id="imapPort" value="993">
+              </div>
+            </div>
+            
+            <!-- 第三行：账号和密码并排 -->
+            <div class="form-row compact">
+              <div class="form-group">
+                <label data-i18n="emailAccount">邮箱账号</label>
+                <input type="email" id="imapUser" data-i18n-placeholder="emailPlaceholder" placeholder="your@example.com">
+              </div>
+              <div class="form-group">
+                <label data-i18n="emailPassword">邮箱密码</label>
+                <input type="password" id="imapPassword" data-i18n-placeholder="passwordPlaceholder" placeholder="邮箱密码或授权码">
+              </div>
+            </div>
+            
+            <div class="button-group compact">
+              <div id="settingsStatus" class="status-display"></div>
+              <div class="button-actions">
+                <button class="btn btn-primary" onclick="testImap()" data-i18n="testConnection">测试连接</button>
+                <button class="btn btn-success" onclick="saveSettings()" data-i18n="saveConfig">保存配置</button>
+              </div>
+            </div>
           </div>
-          
-          <div class="domain-list" id="domainList"></div>
-          
-          <hr style="margin: 30px 0;">
-          
-          <h3 data-i18n="imapConfigTitle">IMAP邮箱配置（用于接收验证码）</h3>
-          <div class="form-group">
-            <label data-i18n="imapServer">IMAP服务器</label>
-            <input type="text" id="imapHost" data-i18n-placeholder="imapHostPlaceholder" placeholder="imap.example.com">
-          </div>
-          <div class="form-group">
-            <label data-i18n="port">端口</label>
-            <input type="number" id="imapPort" value="993">
-          </div>
-          <div class="form-group">
-            <label data-i18n="emailAccount">邮箱账号</label>
-            <input type="email" id="imapUser" data-i18n-placeholder="emailPlaceholder" placeholder="your@example.com">
-          </div>
-          <div class="form-group">
-            <label data-i18n="password">密码</label>
-            <input type="password" id="imapPassword">
-            <p style="font-size: 11px; color: #86868b; margin-top: 6px;">💡 提示：密码就是授权码（如 Gmail 需要使用应用专用密码）</p>
-          </div>
-          
-          <button class="btn btn-primary" onclick="testImap()" data-i18n="testConnection" title="测试成功后会自动保存配置">测试连接</button>
-          <button class="btn btn-success" onclick="saveSettings()" data-i18n="saveConfig" title="手动保存当前配置">保存配置</button>
-          
-          <div id="settingsStatus" style="margin-top: 16px;"></div>
-          
-          <hr style="margin: 30px 0;">
-          
-          <h2 data-i18n="languageSettings">语言设置</h2>
-          <div class="form-group">
-            <label data-i18n="selectLanguage">选择语言</label>
-            <select id="languageSelect" onchange="changeLanguage()" style="width: 200px;">
-              <option value="zh-CN">简体中文</option>
-              <option value="en">English</option>
-            </select>
+
+          <!-- 下部分：左右分栏 -->
+          <div class="settings-row compact">
+            <!-- YWindsurf 数据路径 (占据更多空间) -->
+            <div class="settings-group settings-col-wide">
+              <h3>YWindsurf 数据路径</h3>
+              <div class="form-group compact" style="margin-bottom: 0;">
+                <div class="path-input-group">
+                  <input type="text" id="dataPathInput" placeholder="自动检测" readonly>
+                  <button class="btn btn-secondary" onclick="selectDataPath()">选择</button>
+                  <button class="btn btn-outline" onclick="resetDataPath()">重置</button>
+                </div>
+              </div>
+              <div id="pathStatus"></div>
+            </div>
+
+            <!-- 语言设置 (占据较少空间) -->
+            <div class="settings-group settings-col-narrow">
+              <h3 data-i18n="languageSettings">语言设置</h3>
+              <div class="form-group compact" style="margin-bottom: 0;">
+                <select id="languageSelect" onchange="changeLanguage()" style="width: 100%;">
+                  <option value="zh-CN">简体中文</option>
+                  <option value="en">English</option>
+                </select>
+              </div>
+            </div>
           </div>
         </div>
       </div>

@@ -620,7 +620,8 @@ class RegistrationBot {
         const path = require('path');
         const { app } = require('electron');
         
-        const ACCOUNTS_FILE = path.join(app.getPath('userData'), 'accounts.json');
+        const windsurfPaths = require('../../shared/config/windsurf-paths');
+        const ACCOUNTS_FILE = path.join(windsurfPaths.getJsonDataDir(), 'accounts.json');
         
         // 读取现有账号
         let accounts = [];

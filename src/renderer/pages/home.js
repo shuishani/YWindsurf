@@ -475,6 +475,43 @@ ipcRenderer.on('binding-log', (event, data) => {
   }
 });
 
+// 手动选择Windsurf路径
+async function changeWindsurfPath() {
+  try {
+    const selectedPath = await ipcRenderer.invoke('select-windsurf-path');
+    if (selectedPath) {
+      const result = await ipcRenderer.invoke('set-custom-windsurf-path', selectedPath);
+      if (result.success) {
+        showToast('Windsurf路径已设置', 'success');
+        // 刷新系统信息显示新路径
+        refreshSystemInfo();
+      } else {
+        showToast(`设置路径失败: ${result.error}`, 'error');
+      }
+    }
+  } catch (error) {
+    await handleError(error, '选择路径');
+    showToast('选择路径失败', 'error');
+  }
+}
+
+// 重置Windsurf路径（恢复自动检测）
+async function resetWindsurfPath() {
+  try {
+    const result = await ipcRenderer.invoke('set-custom-windsurf-path', ''); // 传空字符串重置
+    if (result.success) {
+      showToast('已重置为自动检测', 'success');
+      // 刷新系统信息显示检测到的路径
+      refreshSystemInfo();
+    } else {
+      showToast(`重置失败: ${result.error}`, 'error');
+    }
+  } catch (error) {
+    await handleError(error, '重置路径');
+    showToast('重置路径失败', 'error');
+  }
+}
+
 // 导出模块
 const homeModule = {
   refreshSystemInfo,
@@ -484,7 +521,9 @@ const homeModule = {
   restoreMachineFile,
   showRegistrationLog,
   hideRegistrationLog,
-  cancelRegistration
+  cancelRegistration,
+  changeWindsurfPath,
+  resetWindsurfPath
 };
 
 // 批量暴露到全局

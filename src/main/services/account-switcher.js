@@ -17,8 +17,9 @@ class AccountSwitcher {
     // 创建带标签的日志实例 - 简洁明了
     this.logger = createTaggedLogger('切号');
     
-    // Windsurf 相关路径
-    this.windsurfUserDataPath = path.join(os.homedir(), 'AppData', 'Roaming', 'Windsurf');
+    // 使用统一的路径配置
+    const windsurfPaths = require('../../shared/config/windsurf-paths');
+    this.windsurfUserDataPath = windsurfPaths.getDataDir();
     this.stateDbPath = path.join(this.windsurfUserDataPath, 'User', 'globalStorage', 'state.vscdb');
     this.sessionsKey = 'secret://{"extensionId":"codeium.windsurf","key":"windsurf_auth.sessions"}';
   }
@@ -119,7 +120,7 @@ class AccountSwitcher {
       scopes: []
     }];
 
-    this.logger.info(`构建账号数据 - 用户名: ${accountDetails.name}, API Key: ${accountDetails.apiKey ? '已获取' : '未获取'}`);
+    this.logger.info(`获取数据 - 用户名: ${accountDetails.name}, API Key: ${accountDetails.apiKey ? '已获取' : '未获取'}`);
     return sessionsData;
   }
 
@@ -289,8 +290,6 @@ class AccountSwitcher {
       const closeResult = await manager.closeWindsurf();
       if (!closeResult) {
         this.logger.warning('关闭 Windsurf 失败，但继续执行');
-      } else {
-        this.logger.success('Windsurf 已关闭');
       }
 
       // 等待进程完全关闭

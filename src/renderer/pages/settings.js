@@ -45,6 +45,9 @@ async function loadSettings() {
     languageSelect.value = savedLang;
   }
   
+  // 加载路径设置
+  await loadPathSettings();
+  
   if (currentConfig.emailConfig) {
     const imapHost = document.getElementById('imapHost');
     const imapPort = document.getElementById('imapPort');
@@ -180,6 +183,85 @@ function changeLanguage() {
   location.reload();
 }
 
+// YWindsurf数据路径设置相关函数
+async function loadPathSettings() {
+  try {
+    // 加载Data路径
+    const dataPath = await ipcRenderer.invoke('get-custom-data-path');
+    const dataPathInput = document.getElementById('dataPathInput');
+    if (dataPathInput) {
+      dataPathInput.value = dataPath || '';
+      dataPathInput.placeholder = dataPath ? '' : '自动检测';
+    }
+  } catch (error) {
+    console.error('加载路径设置失败:', error);
+  }
+}
+
+
+async function selectDataPath() {
+  try {
+    const selectedPath = await ipcRenderer.invoke('select-data-path');
+    if (selectedPath) {
+      const result = await ipcRenderer.invoke('set-custom-data-path', selectedPath);
+      if (result.success) {
+        document.getElementById('dataPathInput').value = selectedPath;
+        document.getElementById('dataPathInput').placeholder = '';
+        showPathStatus('Data 路径设置成功，数据已重新加载', 'success');
+      } else {
+        showPathStatus('设置失败: ' + result.error, 'error');
+      }
+    }
+  } catch (error) {
+    showPathStatus('选择路径失败: ' + error.message, 'error');
+  }
+}
+
+async function resetDataPath() {
+  try {
+    const result = await ipcRenderer.invoke('set-custom-data-path', '');
+    if (result.success) {
+      document.getElementById('dataPathInput').value = '';
+      document.getElementById('dataPathInput').placeholder = '自动检测';
+      showPathStatus('Data 路径已重置，数据已重新加载', 'success');
+    } else {
+      showPathStatus('重置失败: ' + result.error, 'error');
+    }
+  } catch (error) {
+    showPathStatus('重置失败: ' + error.message, 'error');
+  }
+}
+
+// 监听路径变更事件
+ipcRenderer.on('data-path-changed', async () => {
+  try {
+    // 重新加载路径显示
+    await loadPathSettings();
+    
+    // 重新加载其他页面的数据
+    if (typeof loadAccounts === 'function') {
+      await loadAccounts();
+    }
+    if (typeof loadVirtualCards === 'function') {
+      await loadVirtualCards();
+    }
+    
+    console.log('数据路径变更，已重新加载所有数据');
+  } catch (error) {
+    console.error('重新加载数据失败:', error);
+  }
+});
+
+function showPathStatus(message, type) {
+  const statusDiv = document.getElementById('pathStatus');
+  if (statusDiv) {
+    statusDiv.innerHTML = `<div class="status-message status-${type}">${message}</div>`;
+    setTimeout(() => {
+      statusDiv.innerHTML = '';
+    }, 3000);
+  }
+}
+
 // 导出模块并暴露到全局
 const settingsModule = {
   loadSettings,
@@ -187,8 +269,15 @@ const settingsModule = {
   removeDomain,
   testImap,
   saveSettings,
-  changeLanguage
+  changeLanguage,
+  loadPathSettings,
+  selectDataPath,
+  resetDataPath,
+  showPathStatus
 };
 
 Object.assign(window, settingsModule);
 module.exports = settingsModule;
+
+// 页面加载时初始化
+document.addEventListener('DOMContentLoaded', loadSettings);
