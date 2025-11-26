@@ -11,7 +11,7 @@ const windsurfPaths = require('../../shared/config/windsurf-paths');
  * 重置配置、机器码、自动登录
  */
 class WindsurfManagerWindows {
-  constructor(logCallback = null, tag = '系统管理') {
+  constructor(logCallback = null, tag = '') {
     // logCallback参数保留以兼容旧代码，但不再使用
     this.platform = 'win32';
     // 使用带标签的logger实例

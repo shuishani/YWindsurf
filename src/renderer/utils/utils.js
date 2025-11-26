@@ -244,17 +244,63 @@ function formatDateTime(date, options = {}) {
 }
 
 /**
+ * 前端统一日志工具
+ * 通过 IPC 发送到主进程统一处理
+ */
+const logger = {
+  /**
+   * 信息日志
+   */
+  info: (message) => {
+    ipcRenderer.invoke('log-message', { message, type: 'info' });
+  },
+  
+  /**
+   * 成功日志
+   */
+  success: (message) => {
+    ipcRenderer.invoke('log-message', { message, type: 'success' });
+  },
+  
+  /**
+   * 警告日志
+   */
+  warning: (message) => {
+    ipcRenderer.invoke('log-message', { message, type: 'warning' });
+  },
+  
+  /**
+   * 错误日志
+   */
+  error: (message) => {
+    ipcRenderer.invoke('log-message', { message, type: 'error' });
+  },
+  
+  /**
+   * 错误日志并显示 Toast
+   */
+  errorWithToast: (message, toastMsg = null) => {
+    ipcRenderer.invoke('log-message', { message, type: 'error' });
+    showToast(toastMsg || message, 'error');
+  },
+  
+  /**
+   * 成功日志并显示 Toast
+   */
+  successWithToast: (message, toastMsg = null) => {
+    ipcRenderer.invoke('log-message', { message, type: 'success' });
+    showToast(toastMsg || message, 'success');
+  }
+};
+
+/**
  * 统一的错误处理函数
  * @param {Error} error - 错误对象
  * @param {string} context - 错误上下文
  * @param {boolean} showToastMsg - 是否显示Toast提示
  */
 async function handleError(error, context, showToastMsg = false) {
-  console.error(`${context}失败:`, error);
-  await ipcRenderer.invoke('log-message', { 
-    message: `${context}失败: ${error.message}`, 
-    type: 'error' 
-  });
+  logger.error(`${context}失败: ${error.message}`);
   if (showToastMsg) {
     showToast(`${context}失败`, 'error');
   }
@@ -344,7 +390,8 @@ module.exports = {
   handleError,
   applyDaysLeftStyle,
   getDaysLeftStyleString,
-  generateEmptyStateHTML
+  generateEmptyStateHTML,
+  logger
 };
 
 // 导出到全局
@@ -357,7 +404,8 @@ const utilsModule = {
   handleError,
   applyDaysLeftStyle,
   getDaysLeftStyleString,
-  generateEmptyStateHTML
+  generateEmptyStateHTML,
+  logger
 };
 
 Object.assign(window, utilsModule);

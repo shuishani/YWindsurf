@@ -6,8 +6,8 @@
 const axios = require('axios');
 const { createTaggedLogger } = require('../../main/utils/logger');
 
-// 创建带标签的logger实例
-const logger = createTaggedLogger('API');
+// 创建空标签的日志实例
+const logger = createTaggedLogger('');
 
 /**
  * 调用 RegisterUser API 获取基本信息

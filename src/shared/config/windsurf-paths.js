@@ -295,9 +295,9 @@ class WindsurfPaths {
       settings.useCustomDataPath = !!this.customDataDir;
       
       fs.writeFileSync(settingsPath, JSON.stringify(settings, null, 2));
-      console.log('✅ 配置已保存到:', settingsPath);
+      // 配置已保存
     } catch (error) {
-      console.error('❌ 保存路径配置失败:', error.message);
+      // 保存路径配置失败，静默处理
     }
   }
 }

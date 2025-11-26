@@ -6,9 +6,10 @@ const { v4: uuidv4 } = require('uuid');
 const util = require('util');
 const exec = require('child_process').exec;
 const execPromise = util.promisify(exec);
-const { logger } = require('../utils/logger');
+const { createTaggedLogger } = require('../utils/logger');
 
-// 移除重复的开发模式检查，统一使用logger的内置检查
+// 创建空标签的日志实例
+const logger = createTaggedLogger('');
 
 /**
  * 从状态文件中提取积分信息的通用函数
@@ -104,12 +105,15 @@ function registerHomeIPC(app) {
             const result = stmt.get('windsurfAuthStatus');
             if (result && result.value) {
               const authStatus = JSON.parse(result.value);
-              if (authStatus.email) {
+              // 添加空值检查，防止 authStatus 为 null 时报错
+              if (authStatus && authStatus.email) {
                 email = authStatus.email;
                 userName = authStatus.name;
                 apiKey = authStatus.apiKey;
                 planName = authStatus.planName || 'Free'; // 直接获取计划名称
                 logger.success('已登录账号: ' + email + ' (' + planName + ')');
+              } else {
+                logger.warning('未检测到登录账号');
               }
             }
           } finally {

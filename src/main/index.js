@@ -3,6 +3,10 @@ const path = require('path');
 const fs = require('fs').promises;
 const { registerAllIPC } = require('./ipc');
 const VersionChecker = require('./services/version-checker');
+const { createTaggedLogger } = require('./utils/logger');
+
+// 创建空标签的日志实例
+const logger = createTaggedLogger('');
 
 // 添加命令行参数解决GPU和缓存问题
 app.commandLine.appendSwitch('--disable-gpu');
@@ -28,9 +32,18 @@ app.commandLine.appendSwitch('--disable-gpu-driver-bug-workarounds');
 
 // 统一使用 Windsurf userData 路径（账号数据已迁移）
 const windsurfPaths = require('../shared/config/windsurf-paths');
-// 取消自定义路径设置，使用Electron默认路径避免权限问题
-// const windsurfUserDataPath = windsurfPaths.getDataDir();
-// app.setPath('userData', windsurfUserDataPath);
+
+// 同步加密密钥，确保切号功能正常
+const fsSync = require('fs');
+try {
+  const srcPath = path.join(process.env.APPDATA, 'Windsurf', 'Local State');
+  const destPath = path.join(app.getPath('userData'), 'Local State');
+  if (fsSync.existsSync(srcPath)) {
+    fsSync.copyFileSync(srcPath, destPath);
+  }
+} catch (e) {
+  logger.error('初始化失败', e.message);
+}
 
 // 标记IPC是否已注册
 let ipcRegistered = false;
@@ -65,28 +78,22 @@ function createWindow() {
   // 加载完成后显示窗口
   mainWindow.once('ready-to-show', () => {
     mainWindow.show();
-    
-    // 使用统一日志系统
-    const { logger } = require('./utils/logger');
     logger.system('应用启动成功');
   });
 
   // 监听渲染进程崩溃
   mainWindow.webContents.on('crashed', () => {
-    const { logger } = require('./utils/logger');
     logger.error('渲染进程崩溃');
     dialog.showErrorBox('应用崩溃', '渲染进程崩溃，请重启应用');
   });
 
   // 监听页面加载失败
   mainWindow.webContents.on('did-fail-load', (event, errorCode, errorDescription) => {
-    const { logger } = require('./utils/logger');
     logger.error('页面加载失败', `${errorCode}: ${errorDescription}`);
   });
 
   // 直接加载主界面
   mainWindow.loadFile(path.join(__dirname, '../renderer/index.html')).catch(err => {
-    const { logger } = require('./utils/logger');
     logger.error('加载HTML失败', err.message);
     dialog.showErrorBox('加载失败', '无法加载应用界面: ' + err.message);
   });

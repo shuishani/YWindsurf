@@ -183,7 +183,7 @@ class Logger {
     const typeMap = {
       'success': 'success',
       'error': 'error', 
-      'warning': 'error',
+      'warning': 'warning',
       'info': 'info',
       'system': 'success',
       'api': 'info',

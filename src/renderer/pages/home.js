@@ -140,7 +140,7 @@ async function refreshSystemInfo(showNotification = false) {
       // 只在主动刷新时显示提示
       if (showNotification) {
         showToast('⚠️ 未检测到登录账号', 'error');
-        await ipcRenderer.invoke('log-message', { message: '未检测到登录账号', type: 'warning' });
+        logger.warning('未检测到登录账号');
       }
     }
   } catch (error) {
@@ -153,7 +153,7 @@ async function clearLogs() {
   const logContainer = document.getElementById('logContainer');
   if (logContainer) {
     logContainer.innerHTML = '';
-    await ipcRenderer.invoke('log-message', { message: '日志已清空', type: 'info' });
+    logger.info('日志已清空');
   }
 }
 
@@ -428,39 +428,35 @@ ipcRenderer.on('registration-progress', (event, progress) => {
 
 // 重置机器码
 async function resetMachineId() {
-  await ipcRenderer.invoke('log-message', { message: '正在重置机器码（自动备份旧机器码）...', type: 'info' });
+  logger.info('正在重置机器码（自动备份旧机器码）...');
   
   try {
     const result = await ipcRenderer.invoke('reset-machine-id');
     if (result.success) {
-      await ipcRenderer.invoke('log-message', { message: '机器码已重置（旧机器码已备份）', type: 'success' });
-      showToast('✅ 机器码已重置', 'success');
-      // 刷新系统信息以显示新的机器码
+      logger.successWithToast('机器码已重置（旧机器码已备份）', '✅ 机器码已重置');
       refreshSystemInfo();
     } else {
-      await ipcRenderer.invoke('log-message', { message: `重置失败: ${result.error}`, type: 'error' });
+      logger.error(`重置失败: ${result.error}`);
     }
   } catch (error) {
-    await ipcRenderer.invoke('log-message', { message: `重置异常: ${error.message}`, type: 'error' });
+    logger.error(`重置异常: ${error.message}`);
   }
 }
 
 // 恢复机器码
 async function restoreMachineFile() {
-  await ipcRenderer.invoke('log-message', { message: '正在恢复机器码（从备份恢复）...', type: 'info' });
+  logger.info('正在恢复机器码（从备份恢复）...');
   
   try {
     const result = await ipcRenderer.invoke('restore-machine-file');
     if (result.success) {
-      await ipcRenderer.invoke('log-message', { message: '机器码已恢复到上次重置前的状态', type: 'success' });
-      showToast('✅ 机器码已恢复', 'success');
-      // 刷新系统信息以显示恢复的机器码
+      logger.successWithToast('机器码已恢复到上次重置前的状态', '✅ 机器码已恢复');
       refreshSystemInfo();
     } else {
-      await ipcRenderer.invoke('log-message', { message: `恢复失败: ${result.error}（请先执行一次重置操作）`, type: 'error' });
+      logger.error(`恢复失败: ${result.error}（请先执行一次重置操作）`);
     }
   } catch (error) {
-    await ipcRenderer.invoke('log-message', { message: `恢复异常: ${error.message}`, type: 'error' });
+    logger.error(`恢复异常: ${error.message}`);
   }
 }
 

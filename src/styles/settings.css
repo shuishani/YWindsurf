@@ -176,10 +176,18 @@
 }
 
 .status-display {
-  flex: 1;
+  flex: 0 1 auto;
   min-height: 36px;
   display: flex;
   align-items: center;
+  margin-left: 12px;
+}
+
+/* 设置页面的状态消息，移除 margin 避免布局跳动 */
+.status-display .status-message {
+  margin: 0;
+  padding: 8px 12px;
+  font-size: 12px;
 }
 
 .button-group .btn {

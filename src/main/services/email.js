@@ -1,6 +1,6 @@
 const Imap = require('imap');
 const { simpleParser } = require('mailparser');
-const { logger } = require('../utils/logger');
+const { createTaggedLogger } = require('../utils/logger');
 
 /**
  * 本地邮箱验证码接收器
@@ -8,8 +8,8 @@ const { logger } = require('../utils/logger');
 class EmailReceiver {
   constructor(config) {
     this.config = config;
-    // 使用全局logger实例
-    this.logger = logger;
+    // 使用空标签的日志实例
+    this.logger = createTaggedLogger('');
   }
 
   /**

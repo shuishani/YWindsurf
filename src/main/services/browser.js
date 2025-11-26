@@ -9,11 +9,10 @@ class BrowserAutomation {
     this.browser = null;
     this.page = null;
     this.isLaunched = false; // 标记浏览器是否是通过 launch() 启动的
-    // 使用带标签的logger实例
-    this.logger = createTaggedLogger('浏览器自动化');
+    // 使用空标签的日志实例
+    this.logger = createTaggedLogger('');
   }
 
-  // 移除重复的开发模式检查，使用统一日志系统
 
   /**
    * 获取系统 Chrome 路径

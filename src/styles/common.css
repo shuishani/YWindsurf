@@ -593,6 +593,7 @@ body {
   background: #007aff;
   border-radius: 4px;
   width: 0;
+  transition: width 0.3s;
 }
 
 .status-message {

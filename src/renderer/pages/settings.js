@@ -32,7 +32,7 @@ async function loadSettings() {
     try {
       currentConfig = JSON.parse(saved);
     } catch (e) {
-      console.log('配置解析失败:', e.message);
+      // 配置解析失败，使用默认配置
     }
   }
   
@@ -194,7 +194,7 @@ async function loadPathSettings() {
       dataPathInput.placeholder = dataPath ? '' : '自动检测';
     }
   } catch (error) {
-    console.error('加载路径设置失败:', error);
+    // 加载路径设置失败，使用默认值
   }
 }
 
@@ -246,9 +246,9 @@ ipcRenderer.on('data-path-changed', async () => {
       await loadVirtualCards();
     }
     
-    console.log('数据路径变更，已重新加载所有数据');
+    // 数据路径变更，已重新加载
   } catch (error) {
-    console.error('重新加载数据失败:', error);
+    // 重新加载数据失败，静默处理
   }
 });
 

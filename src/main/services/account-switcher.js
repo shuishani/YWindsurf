@@ -17,9 +17,9 @@ class AccountSwitcher {
     // 创建带标签的日志实例 - 简洁明了
     this.logger = createTaggedLogger('切号');
     
-    // 使用统一的路径配置
-    const windsurfPaths = require('../../shared/config/windsurf-paths');
-    this.windsurfUserDataPath = windsurfPaths.getDataDir();
+    // Windsurf 用户数据路径 - 始终使用 %APPDATA%\Windsurf
+    // 注意：这是 Windsurf 的用户数据目录，与自定义安装路径无关
+    this.windsurfUserDataPath = path.join(process.env.APPDATA, 'Windsurf');
     this.stateDbPath = path.join(this.windsurfUserDataPath, 'User', 'globalStorage', 'state.vscdb');
     this.sessionsKey = 'secret://{"extensionId":"codeium.windsurf","key":"windsurf_auth.sessions"}';
   }
@@ -46,50 +46,22 @@ class AccountSwitcher {
   }
 
   /**
-   * 使用 Windsurf 的 Local State 文件进行同源加密
-   * 复制 Windsurf 的加密密钥到当前应用
+   * 使用 Windsurf 的 Local State 密钥进行加密
+   * 注意：应用启动时已经同步了 Local State 文件，所以直接使用 safeStorage 即可
    */
   async encryptWithWindsurfKey(sessionsData) {
-    const path = require('path');
-    const fs = require('fs').promises;
-    const { app, safeStorage } = require('electron');
-    
-    // Windsurf 的 Local State 文件路径
-    const windsurfLocalStatePath = path.join(this.windsurfUserDataPath, 'Local State');
-    const currentLocalStatePath = path.join(app.getPath('userData'), 'Local State');
+    const { safeStorage } = require('electron');
     
     try {
-      // 备份当前的 Local State
-      let originalLocalState = null;
-      try {
-        originalLocalState = await fs.readFile(currentLocalStatePath, 'utf-8');
-      } catch (e) {
-        // 如果没有原始文件，不需要备份
-      }
-      
-      // 复制 Windsurf 的 Local State 文件以获取加密密钥
-      await fs.copyFile(windsurfLocalStatePath, currentLocalStatePath);
-      await new Promise(resolve => setTimeout(resolve, 100));
-      
-      // 进行加密
+      // 直接使用 safeStorage 加密（启动时已同步密钥）
       const sessionsJson = JSON.stringify(sessionsData);
       const encryptedBuffer = safeStorage.encryptString(sessionsJson);
-      
-      // 恢复原始的 Local State（如果有的话）
-      if (originalLocalState) {
-        await fs.writeFile(currentLocalStatePath, originalLocalState, 'utf-8');
-      } else {
-        // 删除复制的文件
-        try {
-          await fs.unlink(currentLocalStatePath);
-        } catch (e) {}
-      }
       
       return encryptedBuffer;
       
     } catch (error) {
-      this.logger.error('账号数据处理失败', error.message);
-      throw new Error('账号数据处理失败');
+      this.logger.error('账号数据加密失败', error.message);
+      throw new Error('账号数据加密失败: ' + error.message);
     }
   }
 

@@ -43,8 +43,6 @@ async function loginWithEmailPassword(email, password) {
       displayName: response.data.displayName || email.split('@')[0]
     };
   } catch (error) {
-    console.error('❌ Firebase登录失败:', error.message);
-    
     if (error.response && error.response.data) {
       const errorData = error.response.data.error;
       let message = '登录失败';
@@ -107,7 +105,6 @@ async function refreshIdToken(refreshToken) {
       expiresIn: response.data.expires_in
     };
   } catch (error) {
-    console.error('❌ Token刷新失败:', error.message);
     return {
       success: false,
       error: error.message

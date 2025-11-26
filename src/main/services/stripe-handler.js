@@ -9,8 +9,8 @@ const { createTaggedLogger } = require('../utils/logger');
 const { bindCard, retryBind } = require('./stripe-binder');
 const { loginToStripePage } = require('./windsurf-login');
 
-// 创建带标签的logger实例
-const logger = createTaggedLogger('虚拟卡管理');
+// 创建日志实例：空标签用于普通日志，批量绑卡标签用于实时日志
+const logger = createTaggedLogger('');
 const bindLogger = createTaggedLogger('批量绑卡');
 
 let mainWindow;

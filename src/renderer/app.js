@@ -38,14 +38,14 @@ window.switchTab = function(tabName, evt) {
     const dataLoaders = {
       register: () => window.loadAccounts(),
       switch: () => window.loadCards(),
-      settings: () => window.loadSettings().catch(console.error)
+      settings: () => window.loadSettings().catch(() => {})
     };
     
     if (dataLoaders[tabName]) {
       dataLoaders[tabName]();
     }
   } catch (error) {
-    console.error('switchTab error:', error);
+    // 标签页切换失败，静默处理
   }
 };
 

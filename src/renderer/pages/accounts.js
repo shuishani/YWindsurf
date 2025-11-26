@@ -56,7 +56,6 @@ async function toggleCardSelector() {
         });
       }, 0);
     } catch (error) {
-      console.error('加载虚拟卡列表失败:', error);
       showToast('加载虚拟卡失败', 'error');
     }
   } else {
@@ -480,7 +479,7 @@ function toggleActionMenu(event, id) {
 async function copyAccountRow(email, password) {
   navigator.clipboard.writeText(email);
   showToast('账号已复制', 'success');
-  await ipcRenderer.invoke('log-message', { message: `复制账号: ${email}`, type: 'success' });
+  logger.success(`复制账号: ${email}`);
 }
 
 // 查看账号详细信息
@@ -755,8 +754,7 @@ async function saveAccountEdit(id) {
     // 保存到文件
     const result = await ipcRenderer.invoke('save-accounts', accountsCache);
     if (result.success) {
-      await ipcRenderer.invoke('log-message', { message: `账号编辑成功: ${newEmail}`, type: 'success' });
-      showToast('账号信息已更新', 'success');
+      logger.successWithToast(`账号编辑成功: ${newEmail}`, '账号信息已更新');
       
       // 关闭弹窗
       document.querySelector('.edit-account-modal').remove();
@@ -767,15 +765,14 @@ async function saveAccountEdit(id) {
       showAlertDialog('保存失败', result.error, 'error');
     }
   } catch (error) {
-    console.error('保存账号编辑失败:', error);
-    await ipcRenderer.invoke('log-message', { message: `账号编辑失败: ${error.message}`, type: 'error' });
+    logger.error(`账号编辑失败: ${error.message}`);
     showAlertDialog('保存失败', error.message, 'error');
   }
 }
 
 // 获取账号积分详情
 async function getAccountDetails(email, password) {
-  await ipcRenderer.invoke('log-message', { message: `正在刷新账号信息: ${email}`, type: 'info' });
+  logger.info(`正在刷新账号信息: ${email}`);
   
   try {
     // 注意：IPC调用传递两个独立参数，不是对象
@@ -786,7 +783,7 @@ async function getAccountDetails(email, password) {
       
       // 检查数据是否存在
       if (!data) {
-        await ipcRenderer.invoke('log-message', { message: `刷新账号信息失败: 返回数据为空`, type: 'warning' });
+        logger.warning(`刷新账号信息失败: 返回数据为空`);
         showToast(`❌ 刷新账号信息失败: 返回数据为空`, 'error');
         return;
       }
@@ -839,13 +836,12 @@ async function getAccountDetails(email, password) {
           
           // 保存到文件
           await ipcRenderer.invoke('save-accounts', accounts);
-          await ipcRenderer.invoke('log-message', { message: `账号刷新成功: ${email}`, type: 'success' });
+          logger.success(`账号刷新成功: ${email}`);
         } else {
-          await ipcRenderer.invoke('log-message', { message: `未找到账号记录: ${email}`, type: 'warning' });
+          logger.warning(`未找到账号记录: ${email}`);
         }
       } catch (error) {
-        console.error('更新账号数据失败:', error);
-        await ipcRenderer.invoke('log-message', { message: `更新账号数据失败: ${error.message}`, type: 'error' });
+        logger.error(`更新账号数据失败: ${error.message}`);
       }
       
       // 重新加载账号列表
@@ -857,16 +853,15 @@ async function getAccountDetails(email, password) {
       
       // 判断是否是超时错误
       if (errorMsg.includes('timeout')) {
-        await ipcRenderer.invoke('log-message', { message: `账号刷新超时: ${email}`, type: 'warning' });
+        logger.warning(`账号刷新超时: ${email}`);
         showToast(`账号刷新超时，请重试`, 'error');
       } else {
-        await ipcRenderer.invoke('log-message', { message: `账号刷新失败: ${email}`, type: 'warning' });
+        logger.warning(`账号刷新失败: ${email}`);
         showToast(`账号刷新失败: ${email}`, 'error');
       }
     }
   } catch (error) {
-    console.error('刷新账号信息异常:', error);
-    await ipcRenderer.invoke('log-message', { message: `账号刷新异常: ${email}`, type: 'warning' });
+    logger.warning(`账号刷新异常: ${email}`);
     showToast(`账号刷新异常: ${email}`, 'error');
   }
 }
@@ -1009,8 +1004,7 @@ async function deleteAccountFromTable(id, email) {
       try {
         const result = await ipcRenderer.invoke('delete-account', id);
         if (result.success) {
-          showToast('账号已删除', 'success');
-          await ipcRenderer.invoke('log-message', { message: `删除账号: ${email}`, type: 'success' });
+          logger.successWithToast(`删除账号: ${email}`, '账号已删除');
           await loadAccounts();
         } else {
           showAlertDialog('删除失败', result.error, 'error');
@@ -1022,10 +1016,6 @@ async function deleteAccountFromTable(id, email) {
   );
 }
 
-// 删除账号（兼容旧接口）
-async function deleteAccount(id) {
-  return deleteAccountFromTable(id, '');
-}
 
 // 导入账号
 function showImportAccountForm() {
@@ -1124,7 +1114,7 @@ async function importAccounts() {
 
 // 导出选中账号
 async function exportAccounts() {
-  await ipcRenderer.invoke('log-message', { message: '开始导出选中账号...', type: 'info' });
+  logger.info('开始导出选中账号...');
 
   // 获取选中的账号
   const selectedAccounts = getSelectedAccounts();
@@ -1149,11 +1139,9 @@ async function exportAccounts() {
   a.click();
   URL.revokeObjectURL(url);
 
-  await ipcRenderer.invoke('log-message', { message: `成功导出 ${selectedAccounts.length} 个选中账号`, type: 'success' });
-  showToast(`已导出 ${selectedAccounts.length} 个账号`, 'success');
+  logger.successWithToast(`成功导出 ${selectedAccounts.length} 个选中账号`, `已导出 ${selectedAccounts.length} 个账号`);
 }
 
-// 重复的getAccountDetails函数已删除，使用上面的完整版本
 
 // 初始化事件监听
 function initAccountEvents() {
@@ -1216,7 +1204,6 @@ async function markCardBound(email, success) {
       showToast('标记失败: ' + result.error, 'error');
     }
   } catch (error) {
-    console.error('标记绑卡状态失败:', error);
     showToast('标记失败: ' + error.message, 'error');
   }
 }
@@ -1412,7 +1399,7 @@ async function refreshSelectedAccounts() {
     return;
   }
   
-  await ipcRenderer.invoke('log-message', { message: `开始刷新 ${selectedAccounts.length} 个账号的积分数据...`, type: 'info' });
+  logger.info(`开始刷新 ${selectedAccounts.length} 个账号的积分数据...`);
   showToast(`正在刷新 ${selectedAccounts.length} 个账号...`, 'info');
   
   let successCount = 0;
@@ -1470,14 +1457,14 @@ async function refreshSelectedAccounts() {
         }
         
         successCount++;
-        await ipcRenderer.invoke('log-message', { message: `✓ ${account.email} 刷新成功`, type: 'success' });
+        logger.success(`${account.email} 刷新成功`);
       } else {
         failCount++;
-        await ipcRenderer.invoke('log-message', { message: `✗ ${account.email} 刷新失败: ${result.error || '未知错误'}`, type: 'error' });
+        logger.error(`${account.email} 刷新失败: ${result.error || '未知错误'}`);
       }
     } catch (error) {
       failCount++;
-      await ipcRenderer.invoke('log-message', { message: `✗ ${account.email} 刷新异常: ${error.message}`, type: 'error' });
+      logger.error(`${account.email} 刷新异常: ${error.message}`);
     }
   }
   
@@ -1485,16 +1472,16 @@ async function refreshSelectedAccounts() {
   if (dataChanged) {
     try {
       await ipcRenderer.invoke('save-accounts', accounts);
-      await ipcRenderer.invoke('log-message', { message: '账号数据已保存', type: 'success' });
+      logger.success('账号数据已保存');
     } catch (error) {
-      await ipcRenderer.invoke('log-message', { message: `保存账号数据失败: ${error.message}`, type: 'error' });
+      logger.error(`保存账号数据失败: ${error.message}`);
     }
   }
   
   // 刷新完成后重新加载账号列表
   await loadAccounts();
   showToast(`刷新完成！成功 ${successCount} 个，失败 ${failCount} 个`, successCount > 0 ? 'success' : 'warning');
-  await ipcRenderer.invoke('log-message', { message: `批量刷新完成：成功 ${successCount} 个，失败 ${failCount} 个`, type: 'info' });
+  logger.info(`批量刷新完成：成功 ${successCount} 个，失败 ${failCount} 个`);
 }
 
 // 导出选中的账号
@@ -1520,8 +1507,7 @@ async function exportSelectedAccounts() {
   document.body.removeChild(a);
   URL.revokeObjectURL(url);
   
-  showToast(`已导出 ${selectedAccounts.length} 个账号`, 'success');
-  await ipcRenderer.invoke('log-message', { message: `导出选中账号：${selectedAccounts.length} 个`, type: 'success' });
+  logger.successWithToast(`导出选中账号：${selectedAccounts.length} 个`, `已导出 ${selectedAccounts.length} 个账号`);
 }
 
 // 删除选中的账号
@@ -1538,7 +1524,7 @@ async function deleteSelectedAccounts() {
     '批量删除账号',
     `确定要删除选中的 ${selectedAccounts.length} 个账号吗？\n\n此操作不可恢复，请谨慎操作！`,
     async () => {
-      await ipcRenderer.invoke('log-message', { message: `开始批量删除 ${selectedAccounts.length} 个账号...`, type: 'warning' });
+      logger.warning(`开始批量删除 ${selectedAccounts.length} 个账号...`);
       
       let successCount = 0;
       let failCount = 0;
@@ -1550,18 +1536,18 @@ async function deleteSelectedAccounts() {
             successCount++;
           } else {
             failCount++;
-            await ipcRenderer.invoke('log-message', { message: `删除 ${account.email} 失败: ${result.error}`, type: 'error' });
+            logger.error(`删除 ${account.email} 失败: ${result.error}`);
           }
         } catch (error) {
           failCount++;
-          await ipcRenderer.invoke('log-message', { message: `删除 ${account.email} 异常: ${error.message}`, type: 'error' });
+          logger.error(`删除 ${account.email} 异常: ${error.message}`);
         }
       }
       
       // 删除完成后重新加载账号列表
       await loadAccounts();
       showToast(`删除完成！成功 ${successCount} 个，失败 ${failCount} 个`, 'success');
-      await ipcRenderer.invoke('log-message', { message: `批量删除完成：成功 ${successCount} 个，失败 ${failCount} 个`, type: 'success' });
+      logger.success(`批量删除完成：成功 ${successCount} 个，失败 ${failCount} 个`);
     }
   );
 }
@@ -1696,14 +1682,14 @@ async function startBatchBinding() {
               executeBatchBinding(accounts, selectedCardId);
             },
             async () => {
-              await ipcRenderer.invoke('log-message', { message: '用户取消了批量绑卡操作', type: 'warning' });
+              logger.warning('用户取消了批量绑卡操作');
             }
           );
           return; // 等待用户确认
         }
       }
     } catch (error) {
-      console.error('检查虚拟卡类型失败:', error);
+      // 检查虚拟卡类型失败，静默处理
     }
   }
   
@@ -1725,7 +1711,7 @@ async function executeBatchBinding(accounts, selectedCardId) {
       await loadAccounts();
     }
   } catch (error) {
-    console.error('批量绑卡失败:', error);
+    showToast('批量绑卡异常: ' + error.message, 'error');
   }
 }
 
@@ -1741,7 +1727,7 @@ async function confirmBindSuccess(email) {
       await loadAccounts();
     }
   } catch (error) {
-    console.error('确认绑卡异常:', error);
+    showToast('确认绑卡异常: ' + error.message, 'error');
   }
 }
 
@@ -1757,7 +1743,7 @@ async function retryBinding(email, password) {
       await loadAccounts();
     }
   } catch (error) {
-    console.error('重新绑卡异常:', error);
+    showToast('重新绑卡异常: ' + error.message, 'error');
   }
 }
 
@@ -1903,7 +1889,6 @@ async function switchAccount(email, password) {
       showToast(`切号失败: ${errorMsg}`, 'error');
     }
   } catch (error) {
-    console.error('切号异常:', error);
     showToast(`切号异常: ${error.message}`, 'error');
   }
 }
@@ -2063,7 +2048,6 @@ async function startBatchCancel() {
     );
     
   } catch (error) {
-    console.error('批量取消订阅异常:', error);
     showToast(`取消订阅异常: ${error.message}`, 'error');
   }
 }
@@ -2078,7 +2062,6 @@ async function cancelCancelOperation() {
       showToast(result.message || '取消失败', 'error');
     }
   } catch (error) {
-    console.error('取消操作失败:', error);
     showToast('取消操作失败', 'error');
   }
 }
@@ -2105,7 +2088,6 @@ const accountsModule = {
   loadAccounts,
   setCurrentEmailCache,
   renderAccounts,
-  deleteAccount,
   deleteAccountFromTable,
   updateAccountStats,
   exportAccounts,

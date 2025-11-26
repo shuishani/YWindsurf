@@ -18,7 +18,7 @@ async function loadCards() {
       renderBins();  // 同时渲染BIN列表
     }
   } catch (error) {
-    console.error('加载虚拟卡失败:', error);
+    showToast('加载虚拟卡失败', 'error');
   }
 }
 
@@ -177,15 +177,11 @@ async function saveCard() {
 
 // 删除卡片
 async function deleteCard(cardId) {
-  console.log('deleteCard called with cardId:', cardId);
-  console.log('showConfirmDialog function:', window.showConfirmDialog);
-  
   // 获取卡片信息用于显示
   const card = virtualCards.find(c => c.id === cardId);
   const cardNumber = card ? card.number.replace(/(\d{4})(?=\d)/g, '$1 ') : '未知卡号';
   
   if (typeof window.showConfirmDialog !== 'function') {
-    console.error('showConfirmDialog is not available');
     if (confirm('确定要删除这张虚拟卡吗？')) {
       virtualCards = virtualCards.filter(c => c.id !== cardId);
       const result = await ipcRenderer.invoke('save-cards', virtualCards);

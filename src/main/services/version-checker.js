@@ -1,6 +1,9 @@
 const { dialog, shell } = require('electron');
 const axios = require('axios');
-const { logger } = require('../utils/logger');
+const { createTaggedLogger } = require('../utils/logger');
+
+// 创建空标签的日志实例
+const logger = createTaggedLogger('');
 
 class VersionChecker {
   constructor() {

@@ -29,8 +29,8 @@ function registerAllIPC(app, mainWindow) {
   const SETTINGS_FILE = path.join(JSON_DATA_DIR, 'settings.json');
   const CURRENT_LOGIN_FILE = path.join(WINDSURF_DATA_DIR, 'current_login.json');
   
-  // 创建带标签的日志实例
-  const systemLogger = createTaggedLogger('系统管理');
+  // 创建空标签的日志实例
+  const systemLogger = createTaggedLogger('');
   
   // 注册状态管理
   let currentRegistrationBot = null;
@@ -469,7 +469,6 @@ function registerAllIPC(app, mainWindow) {
     }
   });
 
-  // 旧的半自动切号已删除，使用新的完全自动切号 (switch-account)
 
   // ==================== Windsurf路径管理 ====================
   ipcMain.handle('get-windsurf-path', async () => {
