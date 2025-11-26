@@ -14,6 +14,7 @@ let selectedCardId = 'auto';
 // 设置当前登录账号缓存
 function setCurrentEmailCache(email) {
   currentEmailCache = email;
+  addLog(`当前登录账号：${email}`);
 }
 
 // ==================== 账号数据管理 ====================
@@ -225,7 +226,7 @@ function formatAccountData(acc) {
  */
 function calculateAccountStyles(acc) {
   // 使用统一的积分和PRO账号处理函数
-  const creditsInfo = processAccountCredits(acc.usedPromptCredits, acc.monthlyPromptCredits);
+  const creditsInfo = processAccountCredits(acc.usedPromptCredits, acc.monthlyPromptCredits, acc.usageUnknown);
   
   // 绑卡状态
   let cardBoundHtml;
@@ -553,12 +554,10 @@ function viewAccount(email, password) {
 
   // 计算到期时间 - 使用系统的calculateExpiry函数
   let expiryInfo = '未知';
-  if (account.createdAt) {
-    const expiry = calculateExpiry(account.createdAt);
-    if (expiry.isExpired) {
-      expiryInfo = `已过期 ${Math.abs(expiry.daysLeft)} 天`;
-    } else {
-      expiryInfo = `${expiry.daysLeft} 天后到期`;
+  if (account.expiresAt || account.createdAt) {
+    const expiry = calculateExpiry(account.createdAt, account.expiresAt);
+    if (expiry.expiryDate) {
+      expiryInfo = expiry.expiryText;
     }
   }
 
@@ -824,7 +823,8 @@ async function getAccountDetails(email, password) {
             name: data.name,
             lastRefreshed: new Date().toISOString(), // 添加最后刷新时间
             createdAt: data.createdAt || accounts[accountIndex].createdAt, // 更新创建时间
-            expiresAt: data.expiresAt || accounts[accountIndex].expiresAt // 更新到期时间
+            expiresAt: data.expiresAt || accounts[accountIndex].expiresAt, // 更新到期时间
+            usageUnknown: data.usageUnknown || false // 使用量未知标记（100积分试用账号）
           };
           
           // 总是更新绑卡状态（根据积分判断）

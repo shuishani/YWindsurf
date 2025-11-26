@@ -43,49 +43,34 @@ function showToast(message, type = 'success') {
   }, 2000);
 }
 
-// 计算到期时间（Pro试用期为14天）
+// 计算到期时间
 function calculateExpiry(createdAt, expiresAt = null) {
-  // 如果有直接的到期时间，优先使用
+  // 如果有直接的到期时间，使用它
   if (expiresAt) {
     const expiryDate = new Date(expiresAt);
     const now = new Date();
-    const daysLeft = Math.ceil((expiryDate - now) / (1000 * 60 * 60 * 24));
-    const isExpired = daysLeft <= 0;
+    const diffMs = expiryDate - now;
+    const daysLeft = Math.ceil(diffMs / (1000 * 60 * 60 * 24));
+    const isExpired = diffMs <= 0;  // 使用毫秒差判断是否过期
+    
     
     return {
       expiryDate,
-      daysLeft,
+      daysLeft: isExpired ? 0 : daysLeft,
       isExpired,
-      expiryText: isExpired ? '已到期' : `剩余${daysLeft}天`,
+      expiryText: isExpired ? '已到期' : (daysLeft < 1 ? '不到1天' : `剩余${daysLeft}天`),
       expiryColor: isExpired ? '#e74c3c' : (daysLeft <= 3 ? '#ff9500' : '#007aff')
     };
   }
   
-  // 如果没有创建时间，返回未知状态
-  if (!createdAt) {
-    return {
-      expiryDate: null,
-      daysLeft: null,
-      isExpired: false,
-      expiryText: '未知',
-      expiryColor: '#86868b'
-    };
-  }
-  
-  const created = new Date(createdAt);
-  const now = new Date();
-  const expiryDate = new Date(created);
-  expiryDate.setDate(expiryDate.getDate() + 14); // 14天后到期
-  
-  const daysLeft = Math.ceil((expiryDate - now) / (1000 * 60 * 60 * 24));
-  const isExpired = daysLeft <= 0;
-  
+  // 没有到期时间（免费账号或未刷新的账号）
+  // 不再用 createdAt + 14天 计算，因为这可能是错误的
   return {
-    expiryDate,
-    daysLeft,
-    isExpired,
-    expiryText: isExpired ? '已到期' : `剩余${daysLeft}天`,
-    expiryColor: isExpired ? '#e74c3c' : (daysLeft <= 3 ? '#ff9500' : '#007aff')
+    expiryDate: null,
+    daysLeft: null,
+    isExpired: false,
+    expiryText: '—',  // 显示横线表示无到期时间
+    expiryColor: '#86868b'
   };
 }
 
@@ -130,7 +115,7 @@ function addLog(message, type = 'info') {
  * @param {number} totalCredits - 总积分限额
  * @returns {Object} 包含账号类型、积分信息、颜色等的完整对象
  */
-function processAccountCredits(usedCredits, totalCredits) {
+function processAccountCredits(usedCredits, totalCredits, usageUnknown = false) {
   const used = usedCredits || 0;
   const total = totalCredits || 0;
   
@@ -158,7 +143,7 @@ function processAccountCredits(usedCredits, totalCredits) {
   let percent = 0;
   let color = '#86868b'; // 默认灰色
   
-  if (hasCreditsData) {
+  if (hasCreditsData && !usageUnknown) {
     percent = Math.round((used / total) * 100);
     
     // 3. 颜色计算
@@ -169,6 +154,8 @@ function processAccountCredits(usedCredits, totalCredits) {
     } else {
       color = '#34c759'; // 绿色 - 正常
     }
+  } else if (usageUnknown) {
+    color = '#86868b'; // 灰色 - 使用量未知
   }
   
   return {
@@ -185,8 +172,9 @@ function processAccountCredits(usedCredits, totalCredits) {
     
     // 显示信息
     color,
-    displayText: hasCreditsData ? `${used} / ${total}` : '- / -',
-    displayPercent: hasCreditsData ? `(${percent}%)` : '(-)',
+    usageUnknown,
+    displayText: usageUnknown ? `— / ${total}` : (hasCreditsData ? `${used} / ${total}` : '- / -'),
+    displayPercent: usageUnknown ? '(—)' : (hasCreditsData ? `(${percent}%)` : '(-)'),
     
     // 用于首页DOM更新的方法
     updateHomePage: function(pointsElement, percentElement, barElement) {

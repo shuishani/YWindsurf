@@ -162,59 +162,14 @@ function parseGetCurrentUserResponse(buffer) {
       }
     }
     
-    // 解析 Protobuf 结构获取积分
+    // 解析 Protobuf 结构
     const decoded = decodeProtobufMessage(buffer);
+    
+    // 提取积分信息
     const credits = extractCreditsInfo(decoded);
     
-    // 提取创建时间和到期时间
-    let createdAt = null;
-    let expiresAt = null;
-    try {
-      // 查找时间戳的辅助函数
-      const extractTimestamp = (obj) => {
-        if (obj && obj['1'] && typeof obj['1'] === 'number' && obj['1'] > 1600000000) {
-          const seconds = obj['1'];
-          const nanos = obj['2'] || 0;
-          return new Date(seconds * 1000 + Math.floor(nanos / 1000000)).toISOString();
-        }
-        return null;
-      };
-
-      const timestamps = [];
-      
-      // 直接从已知的关键路径提取时间戳
-      const knownPaths = [
-        decoded.nested_4?.nested_3,
-        decoded.nested_4?.nested_9, 
-        decoded.nested_4?.nested_18,
-        decoded.nested_4?.nested_20,
-        decoded.nested_4?.nested_21,
-        decoded.nested_1?.nested_2,
-        decoded.nested_1?.nested_3
-      ];
-      
-      // 提取有效时间戳
-      for (const obj of knownPaths) {
-        const ts = extractTimestamp(obj);
-        if (ts) timestamps.push(ts);
-      }
-      
-      if (timestamps.length > 0) {
-        // 按时间排序
-        timestamps.sort((a, b) => new Date(a) - new Date(b));
-        
-        // 简单逻辑：最早的是创建时间，最晚的是到期时间
-        createdAt = timestamps[0];
-        if (timestamps.length > 1) {
-          // 寻找未来的时间戳作为到期时间
-          const now = new Date();
-          const futureTimestamps = timestamps.filter(ts => new Date(ts) > now);
-          expiresAt = futureTimestamps.length > 0 ? futureTimestamps[0] : timestamps[timestamps.length - 1];
-        }
-      }
-    } catch (e) {
-      // 忽略提取错误
-    }
+    // 提取时间信息
+    const { createdAt, expiresAt } = extractTimeInfo(decoded);
 
     // 判断账号类型
     const subscriptionType = determineSubscriptionType(credits);
@@ -251,7 +206,7 @@ function parseGetCurrentUserResponse(buffer) {
         displayFlowUsed: credits.displayFlowUsed,
         displayFlowLimit: credits.displayFlowLimit,
         displayPromptText: credits.displayPromptText,
-        promptUsageUnknown: credits.promptUsageUnknown
+        usageUnknown: credits.usageUnknown
       },
       team: credits.hasTeam ? { name: null } : null,
       isPro: subscriptionType === 'PRO'
@@ -263,89 +218,137 @@ function parseGetCurrentUserResponse(buffer) {
 }
 
 /**
+ * 从 Protobuf 时间戳对象提取 ISO 时间字符串
+ */
+function extractTimestamp(obj) {
+  if (obj && obj['1'] && typeof obj['1'] === 'number' && obj['1'] > 1600000000 && obj['1'] < 2000000000) {
+    const seconds = obj['1'];
+    const nanos = obj['2'] || 0;
+    return new Date(seconds * 1000 + Math.floor(nanos / 1000000)).toISOString();
+  }
+  return null;
+}
+
+/**
+ * 从解码的 Protobuf 消息中提取时间信息
+ * 优先级：
+ * 1. nested_4.nested_18 (Team 到期时间 - 500/750积分账号)
+ * 2. nested_4.nested_21 (Team 备用到期时间)
+ * 3. nested_1.nested_27 (User 到期时间 - 100积分试用账号)
+ * 4. nested_1.nested_26 + 30天 (免费账号计算)
+ */
+function extractTimeInfo(decoded) {
+  let createdAt = null;
+  let expiresAt = null;
+  
+  try {
+    const userMessage = decoded.nested_1;
+    const teamMessage = decoded.nested_4;
+    
+    // 创建时间: nested_1.nested_4
+    if (userMessage?.nested_4) {
+      createdAt = extractTimestamp(userMessage.nested_4);
+    }
+    
+    // 到期时间优先级处理
+    // 1. 优先从 Team 消息获取 (500/750积分账号)
+    if (teamMessage) {
+      expiresAt = extractTimestamp(teamMessage.nested_18) || 
+                  extractTimestamp(teamMessage.nested_21);
+    }
+    
+    // 2. 如果没有 Team 到期时间，使用 User 消息 (100积分试用账号)
+    if (!expiresAt && userMessage?.nested_27) {
+      expiresAt = extractTimestamp(userMessage.nested_27);
+    }
+    
+    // 3. 如果都没有，使用创建时间 + 30天（25积分免费账号）
+    if (!expiresAt && createdAt) {
+      const baseDate = new Date(createdAt);
+      baseDate.setDate(baseDate.getDate() + 30);
+      expiresAt = baseDate.toISOString();
+    }
+  } catch (e) {
+    logger.error('时间戳提取失败', e.message);
+  }
+  
+  return { createdAt, expiresAt };
+}
+
+/**
  * 从解码的 Protobuf 消息中提取积分信息
+ * 
+ * 数据来源：
+ * - User (nested_1): 字段28=已用Prompt, 字段29=已用Flow
+ * - PlanInfo (nested_6): 字段12=Prompt限额, 字段13=Flow限额
+ * - Team (nested_4): 字段15=邀请积分, 字段16/17=Team使用量
  */
 function extractCreditsInfo(decoded) {
-  let usedPrompt = null;
-  let usedFlow = null;
-  let maxPrompt = null;
-  let maxFlow = null;
-  let referralCredits = 0;  // 邀请积分
-  let isNewTrialAccount = false;
-  let isTrial = false;
-  let creditsUnknown = false;
-  
-  // 提取 User 消息 (field 1)
   const userMessage = decoded.nested_1;
-  if (userMessage) {
-    usedPrompt = userMessage[28] || null;
-    usedFlow = userMessage[29] || null;
-    isNewTrialAccount = userMessage[8] === 2;
-  }
-  
-  // 提取 PlanInfo 消息 (field 6)
   const planInfoMessage = decoded.nested_6;
-  if (planInfoMessage) {
-    maxPrompt = planInfoMessage[12] || null;
-    maxFlow = planInfoMessage[13] || null;
-    isTrial = planInfoMessage[1] === 2 && planInfoMessage[3] === 1;
-  }
-  
-  // 提取 Team 消息 (field 4) - 包含邀请积分
   const teamMessage = decoded.nested_4;
-  if (teamMessage) {
-    referralCredits = teamMessage[15] || 0;  // 邀请积分
-  }
   
-  // 搜索 Team 消息中的已使用积分 (field 16/17)
+  // 从 User 消息提取使用量
+  let usedPrompt = userMessage?.[28] || null;
+  let usedFlow = userMessage?.[29] || null;
+  
+  // 从 PlanInfo 消息提取限额
+  let maxPrompt = planInfoMessage?.[12] || null;
+  let maxFlow = planInfoMessage?.[13] || null;
+  
+  // 从 Team 消息提取邀请积分
+  const referralCredits = teamMessage?.[15] || 0;
+  
+  // 从 Team 消息搜索使用量 (500/750积分账号)
   const teamCredits = searchTeamCredits(decoded);
   if (teamCredits.usedPrompt !== null) usedPrompt = teamCredits.usedPrompt;
   if (teamCredits.usedFlow !== null) usedFlow = teamCredits.usedFlow;
   
-  // 处理旧版试用账号无法获取已使用量的情况
-  if (usedPrompt === null && usedFlow === null && isTrial && !isNewTrialAccount) {
-    creditsUnknown = true;
+  // 判断是否为试用账号 (100积分)
+  // 特征：nested_6.1=2, nested_6.3=1, 没有 Team 消息
+  const isTrial = planInfoMessage?.[1] === 2 && planInfoMessage?.[3] === 1 && !teamMessage;
+  let usageUnknown = false;
+  
+  if (isTrial) {
+    // 试用账号限额固定为 100 积分
+    maxPrompt = 10000;  // 100 * 100
+    maxFlow = 0;
+    // 如果无法获取使用量，标记为未知
+    if (usedPrompt === null && usedFlow === null) {
+      usageUnknown = true;
+    }
   }
   
+  // 确保数值有效
   usedPrompt = usedPrompt || 0;
   usedFlow = usedFlow || 0;
-  
-  // 处理试用账号限额
-  if (isTrial && !isNewTrialAccount) {
-    maxPrompt = 10000;  // 100 * 100
-    maxFlow = 1000;     // 10 * 100
-  }
-  
-  maxPrompt = maxPrompt || 0;
+  maxPrompt = (maxPrompt || 0) + referralCredits;  // 加上邀请积分
   maxFlow = maxFlow || 0;
-  
-  // 将邀请积分加到 Prompt 限额中
-  maxPrompt = maxPrompt + referralCredits;
   
   // 转换为官网显示单位（÷ 100）
   const displayPromptUsed = Math.floor(usedPrompt / 100);
   const displayFlowUsed = Math.floor(usedFlow / 100);
-  const displayPromptLimit = Math.floor(maxPrompt / 100);  // 已包含邀请积分
+  const displayPromptLimit = Math.floor(maxPrompt / 100);
   const displayFlowLimit = Math.floor(maxFlow / 100);
   const displayReferralCredits = Math.floor(referralCredits / 100);
   
   return {
     usedPrompt,
     usedFlow,
-    maxPrompt,  // 已包含邀请积分
+    maxPrompt,
     maxFlow,
-    referralCredits,  // 邀请积分
+    referralCredits,
     usedTotal: usedPrompt + usedFlow,
     maxTotal: maxPrompt + maxFlow,
     displayPromptUsed,
     displayFlowUsed,
-    displayPromptLimit,  // 已包含邀请积分
+    displayPromptLimit,
     displayFlowLimit,
-    displayReferralCredits,  // 邀请积分显示值
+    displayReferralCredits,
     displayUsedTotal: displayPromptUsed + displayFlowUsed,
     displayMaxTotal: displayPromptLimit + displayFlowLimit,
-    displayPromptText: creditsUnknown ? `— / ${displayPromptLimit}` : `${displayPromptUsed}/${displayPromptLimit}`,
-    promptUsageUnknown: creditsUnknown,
+    displayPromptText: usageUnknown ? `—/${displayPromptLimit}` : `${displayPromptUsed}/${displayPromptLimit}`,
+    usageUnknown,
     hasTeam: teamCredits.found
   };
 }
@@ -526,6 +529,7 @@ async function getAccountCredits(email, password) {
         accountType: fullInfo.isPro ? 'PRO' : 'Free',
         createdAt: fullInfo.createdAt,
         expiresAt: fullInfo.expiresAt,
+        usageUnknown: fullInfo.usage.usageUnknown || false,
         apiKey: fullInfo.apiKey,
         serverUrl: fullInfo.serverUrl
       }

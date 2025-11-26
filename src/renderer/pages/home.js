@@ -3,7 +3,7 @@
  */
 
 const { ipcRenderer } = require('electron');
-const { showToast, formatDateTime, handleError, applyDaysLeftStyle, getDaysLeftStyleString, processAccountCredits, addLog } = require('../utils/utils');
+const { showToast, formatDateTime, handleError, applyDaysLeftStyle, getDaysLeftStyleString, processAccountCredits, addLog, calculateExpiry } = require('../utils/utils');
 
 // 刷新系统信息
 async function refreshSystemInfo(showNotification = false) {
@@ -68,20 +68,11 @@ async function refreshSystemInfo(showNotification = false) {
       let expiryDateStr = '';
       let createdDateStr = '';
       
-      if (info.currentAccount.expiresAt) {
-        // 优先使用真实的到期时间
-        const expiry = new Date(info.currentAccount.expiresAt);
-        const now = new Date();
-        days = Math.floor((expiry - now) / (1000 * 60 * 60 * 24));
-        expiryDateStr = formatDateTime(info.currentAccount.expiresAt);
-      } else if (info.currentAccount.createdAt) {
-        // 如果没有到期时间，根据创建时间计算
-        const created = new Date(info.currentAccount.createdAt);
-        const expiry = new Date(created);
-        expiry.setDate(expiry.getDate() + 14); // 修正为14天
-        const now = new Date();
-        days = Math.floor((expiry - now) / (1000 * 60 * 60 * 24));
-        expiryDateStr = formatDateTime(expiry);
+      // 使用统一的 calculateExpiry 函数
+      const expiryInfo = calculateExpiry(info.currentAccount.createdAt, info.currentAccount.expiresAt);
+      if (expiryInfo.expiryDate) {
+        days = expiryInfo.daysLeft;
+        expiryDateStr = formatDateTime(expiryInfo.expiryDate);
       }
       
       // 格式化创建时间

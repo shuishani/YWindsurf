@@ -1,0 +1,405 @@
+syntax = "proto3";
+
+package exa.user_analytics_pb;
+
+import "codeium_common_pb.proto";
+import "google/protobuf/timestamp.proto";
+
+message CascadeAnalyticsResponse {
+  repeated QueryResult query_results = 1;
+}
+
+message AnalyticsResponse {
+  repeated CustomQueryResponse query_results = 1;
+}
+
+message QueryResultPercentCodeWritten {
+  double percent_code_written = 1;
+  int64 codeium_bytes_by_autocomplete = 2;
+  int64 codeium_bytes_by_command = 3;
+  int64 user_bytes = 4;
+  int64 codeium_bytes = 5;
+  int64 total_bytes = 6;
+  int64 codeium_bytes_by_supercomplete = 7;
+  int64 codeium_bytes_by_cascade = 8;
+}
+
+message QueryRequest {
+  oneof request_type {
+    QueryRequestCompletionStats completion_stats = 1;
+    QueryRequestCompletionsByDay completions_by_day = 2;
+    QueryRequestCompletionsByLanguage completions_by_language = 3;
+    QueryRequestAllUsersCompletionStats all_users_completion_stats = 4;
+    QueryRequestAllUsersCompletionsByDay all_users_completions_by_day = 5;
+    QueryRequestAllUsersCompletionsByLanguage all_users_completions_by_language = 6;
+    QueryRequestCompletionsByIde completions_by_ide = 7;
+    QueryRequestCompletionsByIde all_users_completions_by_ide = 8;
+    QueryRequestCompletionsByApiKey completions_by_api_key = 9;
+    QueryRequestChatsByDay chats_by_day = 10;
+    QueryRequestAllChatsByDay all_users_chats_by_day = 11;
+    QueryRequestChatStatsByModel chats_by_model = 12;
+    QueryRequestAllChatStatsByModel all_users_chats_by_model = 13;
+    QueryRequestActiveUserCount active_user_count = 14;
+    QueryRequestPercentCodeWritten percent_code_written = 15;
+    QueryRequestCharsPerOpportunity chars_per_opportunity = 16;
+    QueryRequestChatStats chat_stats = 17;
+    QueryRequestActiveDaysByApiKey active_days_by_api_key = 18;
+    QueryRequestCompletionsByRepository completions_by_repository = 19;
+    QueryRequestCommandStats command_stats = 20;
+    CustomQueryRequest custom_query = 21;
+    UserPageAnalyticsRequest user_page_analytics = 22;
+    QueryRequestCascadeLines cascade_lines = 23;
+    QueryRequestCascadeToolUsage cascade_tool_usage = 24;
+    QueryRequestCascadeRuns cascade_runs = 25;
+    QueryRequestAllUsersCascadeLines all_users_cascade_lines = 26;
+    QueryRequestAllUsersCascadeToolUsage all_users_cascade_tool_usage = 27;
+    QueryRequestAllUsersCascadeRuns all_users_cascade_runs = 28;
+    QueryRequestAllUsersDailyActiveUserCounts all_users_daily_active_user_counts = 29;
+    QueryRequestAllUsersCommandStats all_users_command_stats = 30;
+    QueryRequestIndividualPercentCodeWritten individual_percent_code_written = 31;
+  }
+}
+
+message QueryResultActiveUserCount {
+  int64 active_user_count = 1;
+}
+
+message QueryResultCompletionStats {
+  exa.codeium_common_pb.CompletionStatistics completion_statistics = 1;
+}
+
+message CascadeAnalyticsRequest {
+  string service_key = 1;
+  string group_name = 2;
+  repeated string emails = 3;
+  repeated string ide_types = 4;
+  google.protobuf.Timestamp start_timestamp = 5;
+  google.protobuf.Timestamp end_timestamp = 6;
+  repeated QueryRequest query_requests = 7;
+}
+
+message QueryResultCascadeRuns {
+  repeated CascadeRunsQueryEntry cascade_runs = 1;
+}
+
+message QueryResult {
+  oneof result_type {
+    QueryResultCompletionStats completion_stats = 1;
+    QueryResultCompletionsByDay completions_by_day = 2;
+    QueryResultCompletionsByLanguage completions_by_language = 3;
+    QueryResultCompletionsByIde completions_by_ide = 4;
+    QueryResultCompletionsByApiKey completions_by_api_key = 5;
+    QueryResultChatsByDay chats_by_day = 6;
+    QueryResultChatStatsByModel chats_by_model = 7;
+    QueryResultActiveUserCount active_user_count = 8;
+    QueryResultPercentCodeWritten percent_code_written = 9;
+    QueryResultCharsPerOpportunity chars_per_opportunity = 10;
+    QueryResultChatStats chat_stats = 11;
+    QueryResultActiveDaysByApiKey active_days_by_api_key = 12;
+    QueryResultCompletionsByRepository completions_by_repository = 13;
+    QueryResultError error = 14;
+    QueryResultCommandStats command_stats = 15;
+    CustomQueryResponse custom_stats = 16;
+    UserPageAnalyticsResponse user_page_analytics = 17;
+    QueryResultCascadeLines cascade_lines = 18;
+    QueryResultCascadeToolUsage cascade_tool_usage = 19;
+    QueryResultCascadeRuns cascade_runs = 20;
+    QueryResultDailyActiveUserCounts daily_active_user_counts = 21;
+  }
+}
+
+message QueryResultCompletionsByDay {
+  repeated exa.codeium_common_pb.CompletionByDateEntry completions_by_day = 1;
+}
+
+message QueryResultCompletionsByLanguage {
+  repeated exa.codeium_common_pb.CompletionByLanguageEntry completions_by_language = 1;
+}
+
+message GetPreferredTimeZoneRequest {
+  string api_key = 1;
+}
+
+message GetPreferredTimeZoneResponse {
+  string preferred_time_zone = 1;
+}
+
+message UserPageAnalyticsResponse {
+  repeated exa.codeium_common_pb.UserTableStats user_table_stats = 1;
+}
+
+message QueryResultCompletionsByApiKey {
+  map<string, exa.codeium_common_pb.CompletionStatistics> completions_by_api_key = 1;
+}
+
+message QueryResultCompletionsByIde {
+  map<string, exa.codeium_common_pb.CompletionStatistics> completions_by_ide = 1;
+}
+
+message AnalyticsRequest {
+  repeated CustomQueryRequest query_requests = 1;
+  string service_key = 2;
+  string group_name = 3;
+  google.protobuf.Timestamp start_timestamp = 4;
+  google.protobuf.Timestamp end_timestamp = 5;
+}
+
+message UserPageAnalyticsRequest {
+  string service_key = 1;
+  string group_name = 2;
+  google.protobuf.Timestamp start_timestamp = 3;
+  google.protobuf.Timestamp end_timestamp = 4;
+}
+
+message GetAnalyticsRequest {
+  repeated QueryRequest query_requests = 2;
+  google.protobuf.Timestamp start_timestamp = 3;
+  google.protobuf.Timestamp end_timestamp = 4;
+  string api_key = 5;
+  string group_id = 6;
+  repeated string api_keys = 7;
+  repeated string group_ids = 8;
+  repeated IDEType ide_types = 9;
+}
+
+message GetAnalyticsResponse {
+  repeated QueryResult query_results = 1;
+}
+
+message CustomQueryResponse {
+  repeated QueryResponseItem response_items = 1;
+}
+
+message QueryRequestCompletionStats {
+}
+
+message QueryRequestCompletionsByDay {
+  string time_zone = 1;
+}
+
+message QueryRequestCompletionsByLanguage {
+}
+
+message QueryRequestAllUsersCompletionStats {
+}
+
+message QueryRequestAllUsersCompletionsByDay {
+  string time_zone = 1;
+}
+
+message QueryRequestAllUsersCompletionsByLanguage {
+}
+
+message QueryRequestCompletionsByIde {
+}
+
+message QueryRequestCompletionsByApiKey {
+}
+
+message QueryRequestCompletionsByRepository {
+}
+
+message QueryRequestChatsByDay {
+  string time_zone = 1;
+}
+
+message QueryRequestAllChatsByDay {
+  string time_zone = 1;
+}
+
+message QueryRequestChatStatsByModel {
+}
+
+message QueryRequestAllChatStatsByModel {
+}
+
+message QueryRequestActiveUserCount {
+  string time_zone = 1;
+  google.protobuf.Timestamp start_timestamp = 2;
+  google.protobuf.Timestamp end_timestamp = 3;
+}
+
+message QueryRequestPercentCodeWritten {
+}
+
+message QueryRequestCharsPerOpportunity {
+}
+
+message QueryRequestChatStats {
+}
+
+message QueryRequestActiveDaysByApiKey {
+}
+
+message QueryRequestCommandStats {
+}
+
+message CustomQueryRequest {
+  QueryDataSource data_source = 1;
+  repeated QuerySelectionField selections = 2;
+  repeated QueryFilterField filters = 3;
+  repeated QueryOrderField orderings = 4;
+  repeated QueryAggregationField aggregations = 5;
+  bool use_real_api_key = 6;
+}
+
+message QueryRequestCascadeLines {
+}
+
+message QueryRequestCascadeToolUsage {
+}
+
+message QueryRequestCascadeRuns {
+}
+
+message QueryRequestAllUsersCascadeLines {
+}
+
+message QueryRequestAllUsersCascadeToolUsage {
+}
+
+message QueryRequestAllUsersCascadeRuns {
+}
+
+message QueryRequestAllUsersDailyActiveUserCounts {
+}
+
+message QueryRequestAllUsersCommandStats {
+}
+
+message QueryRequestIndividualPercentCodeWritten {
+}
+
+message CascadeRunsQueryEntry {
+  google.protobuf.Timestamp day = 1;
+  string model = 2;
+  string mode = 3;
+  int64 messages_sent = 4;
+  int64 prompts_used = 5;
+  string cascade_id = 6;
+}
+
+message QueryResultCompletionsByRepository {
+  map<string, exa.codeium_common_pb.CompletionStatistics> completions_by_repository = 1;
+}
+
+message QueryResultChatsByDay {
+  repeated exa.codeium_common_pb.ChatStatsByDateEntry chats_by_day = 1;
+}
+
+message QueryResultChatStatsByModel {
+  repeated exa.codeium_common_pb.ChatStatsByModelEntry chats_by_model = 1;
+}
+
+message QueryResultCharsPerOpportunity {
+  double chars_per_opportunity = 1;
+  uint64 num_bytes_accepted = 2;
+  uint64 num_completion_attempts = 3;
+}
+
+message QueryResultChatStats {
+  exa.codeium_common_pb.ChatStats chat_stats = 1;
+}
+
+message QueryResultActiveDaysByApiKey {
+  map<string, uint32> active_days_by_api_key = 1;
+}
+
+message QueryResultError {
+  string error = 1;
+}
+
+message QueryResultCommandStats {
+  exa.codeium_common_pb.CommandStats command_stats = 1;
+}
+
+message QueryResultCascadeLines {
+  repeated CascadeLineQueryEntry cascade_lines = 1;
+}
+
+message QueryResultCascadeToolUsage {
+  repeated CascadeToolUsageQueryEntry cascade_tool_usage = 1;
+}
+
+message QueryResultDailyActiveUserCounts {
+  repeated DailyActiveUserCount daily_active_user_counts = 1;
+}
+
+message QueryResponseItem {
+  map<string, string> item = 1;
+}
+
+message QuerySelectionField {
+  QueryAggregation aggregation_function = 1;
+  string field = 2;
+  string name = 3;
+}
+
+message QueryFilterField {
+  QueryFilter filter = 1;
+  string name = 2;
+  string value = 3;
+}
+
+message QueryAggregationField {
+  string field = 1;
+  string name = 2;
+}
+
+message QueryOrderField {
+  bool ascending = 1;
+  string name = 2;
+}
+
+message CascadeLineQueryEntry {
+  google.protobuf.Timestamp day = 1;
+  int64 lines_suggested = 2;
+  int64 lines_accepted = 3;
+}
+
+message CascadeToolUsageQueryEntry {
+  google.protobuf.Timestamp day = 1;
+  string tool = 2;
+  int64 count = 3;
+}
+
+message DailyActiveUserCount {
+  google.protobuf.Timestamp day = 1;
+  int64 active_user_count = 2;
+}
+
+enum QueryDataSource {
+  QUERY_DATA_SOURCE_UNSPECIFIED = 0;
+  QUERY_DATA_SOURCE_USER_DATA = 1;
+  QUERY_DATA_SOURCE_CHAT_DATA = 2;
+  QUERY_DATA_SOURCE_COMMAND_DATA = 3;
+  QUERY_DATA_SOURCE_CASCADE_DATA = 4;
+  QUERY_DATA_SOURCE_PCW_DATA = 5;
+}
+
+enum QueryAggregation {
+  QUERY_AGGREGATION_UNSPECIFIED = 0;
+  QUERY_AGGREGATION_COUNT = 1;
+  QUERY_AGGREGATION_SUM = 2;
+  QUERY_AGGREGATION_AVG = 3;
+  QUERY_AGGREGATION_MAX = 4;
+  QUERY_AGGREGATION_MIN = 5;
+}
+
+enum QueryFilter {
+  QUERY_FILTER_UNSPECIFIED = 0;
+  QUERY_FILTER_EQUAL = 1;
+  QUERY_FILTER_NOT_EQUAL = 2;
+  QUERY_FILTER_GREATER_THAN = 3;
+  QUERY_FILTER_LESS_THAN = 4;
+  QUERY_FILTER_GE = 5;
+  QUERY_FILTER_LE = 6;
+}
+
+enum IDEType {
+  IDE_TYPE_UNSPECIFIED = 0;
+  IDE_TYPE_WINDSURF = 1;
+  IDE_TYPE_JETBRAINS = 2;
+  IDE_TYPE_PLUGINS = 3;
+}
+

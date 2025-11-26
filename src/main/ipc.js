@@ -674,6 +674,8 @@ function registerAllIPC(app, mainWindow) {
       account.usedFlowCredits = data.usedFlowCredits;
       account.monthlyFlowCredits = data.monthlyFlowCredits;
       account.accountType = data.accountType;
+      account.createdAt = data.createdAt || account.createdAt;
+      account.expiresAt = data.expiresAt || account.expiresAt;
       
       // 6. 根据积分情况更新绑卡状态
       // 如果积分小于500，说明没有成功绑卡（PRO账号应该有500积分）
@@ -692,7 +694,9 @@ function registerAllIPC(app, mainWindow) {
           monthlyPrompt: account.monthlyPromptCredits,
           usedFlow: account.usedFlowCredits,
           monthlyFlow: account.monthlyFlowCredits
-        }
+        },
+        createdAt: account.createdAt,
+        expiresAt: account.expiresAt
       };
     } catch (error) {
       return { success: false, error: error.message };
