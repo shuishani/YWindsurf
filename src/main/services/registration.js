@@ -1,4 +1,4 @@
-const { chromium } = require('playwright');
+const { connect } = require('puppeteer-real-browser');
 const { createTaggedLogger } = require('../utils/logger');
 
 class RegistrationBot {
@@ -6,14 +6,16 @@ class RegistrationBot {
     this.config = config;
     // 自定义域名邮箱列表
     this.emailDomains = config.emailDomains || ['example.com'];
-    // 邮箱编号计数器(1-999)
-    this.emailCounter = 1;
+    // 邮箱编号计数器(随机起始)
+    this.emailCounter = Math.floor(Math.random() * 999) + 1;
     // 取消检查函数
     this.cancelChecker = null;
     // 创建带标签的日志实例 - 简洁明了
     this.logger = createTaggedLogger('批量注册');
     // 是否自动绑卡（默认true保持向后兼容）
     this.autoBindCard = config.autoBindCard !== undefined ? config.autoBindCard : true;
+    // 邀请链接（可选）
+    this.referralLink = config.referralLink || '';
   }
 
   /**
@@ -32,21 +34,30 @@ class RegistrationBot {
 
   /**
    * 生成域名邮箱
-   * 格式: 编号(1-999) + 随机字母数字组合
+   * 格式: 随机字母 + 编号 + 随机字母数字组合
    */
   async generateTempEmail() {
+    // 生成随机前缀字母(1-3位)
+    const letters = 'abcdefghijklmnopqrstuvwxyz';
+    const prefixLength = Math.floor(Math.random() * 3) + 1;
+    let prefix = '';
+    for (let i = 0; i < prefixLength; i++) {
+      prefix += letters[Math.floor(Math.random() * letters.length)];
+    }
+    
     // 获取当前编号
     const number = this.emailCounter;
     
-    // 生成随机字母数字组合(8位)
+    // 生成随机字母数字组合(5-8位)
     const chars = 'abcdefghijklmnopqrstuvwxyz0123456789';
-    let randomStr = '';
-    for (let i = 0; i < 8; i++) {
-      randomStr += chars[Math.floor(Math.random() * chars.length)];
+    const suffixLength = Math.floor(Math.random() * 4) + 5;
+    let suffix = '';
+    for (let i = 0; i < suffixLength; i++) {
+      suffix += chars[Math.floor(Math.random() * chars.length)];
     }
     
-    // 组合用户名: 编号 + 随机字符串
-    const username = `${number}${randomStr}`;
+    // 组合用户名: 前缀 + 编号 + 后缀
+    const username = `${prefix}${number}${suffix}`;
     
     // 随机选择配置的域名
     const randomIndex = Math.floor(Math.random() * this.emailDomains.length);
@@ -212,188 +223,162 @@ class RegistrationBot {
 
       this.logger.start('启动浏览器');
       
-      // 使用 playwright 启动浏览器
-      browser = await chromium.launch({
-        headless: false, // 可见浏览器窗口
-        args: [
-          '--disable-blink-features=AutomationControlled',
-          '--disable-features=IsolateOrigins,site-per-process',
-          '--disable-web-security',
-          '--disable-features=VizDisplayCompositor',
-          '--disable-ipc-flooding-protection',
-          '--no-sandbox',
-          '--disable-setuid-sandbox'
-        ]
+      // 使用 puppeteer-real-browser，自动绕过 Cloudflare
+      const response = await connect({
+        headless: false,
+        fingerprint: true,  // 启用指纹伪装
+        turnstile: true,    // 自动处理 Cloudflare Turnstile
+        tf: true,
+        args: ['--disable-blink-features=AutomationControlled']
       });
-
-      const context = await browser.newContext({
-        viewport: { width: 900, height: 1000 },
-        userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
-      });
-
-      page = await context.newPage();
       
-      // 注入反检测脚本
-      await page.addInitScript(() => {
-        // 隐藏 webdriver 属性
-        Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
-        
-        // 伪造 Chrome 对象和插件信息
-        window.chrome = { runtime: {}, loadTimes: function() {} };
-        Object.defineProperty(navigator, 'plugins', { get: () => [1, 2, 3, 4, 5] });
-        
-        // 伪造权限查询
-        const originalQuery = window.navigator.permissions.query;
-        window.navigator.permissions.query = (parameters) => (
-          parameters.name === 'notifications' ?
-            Promise.resolve({ state: Notification.permission }) :
-            originalQuery(parameters)
-        );
-      });
+      browser = response.browser;
+      page = response.page;
+      
+      // 设置浏览器窗口大小为 800x900
+      await page.setViewport({ width: 800, height: 900 });
       
       this.logger.userInfo(firstName, lastName, email, password);
 
       // 访问注册页面
       this.logger.browser('访问注册页面');
-      await page.goto('https://windsurf.com/account/register?referral_code=zud10axjviz0n8ru', { 
-        waitUntil: 'networkidle',
+      // 使用配置的邀请链接，如果没有则使用默认注册页面
+      const registerUrl = this.referralLink || 'https://windsurf.com/account/register';
+      await page.goto(registerUrl, { 
+        waitUntil: 'networkidle2',
         timeout: 30000 
       });
 
+      // 如果是邀请链接，先检查是否需要点击"接受邀请"按钮
+      if (this.referralLink) {
+        try {
+          // 查找包含"accept referral"文本的按钮
+          const acceptButton = await page.evaluateHandle(() => {
+            const buttons = Array.from(document.querySelectorAll('button'));
+            return buttons.find(btn => 
+              btn.textContent.toLowerCase().includes('accept referral') ||
+              btn.textContent.toLowerCase().includes('sign up to accept')
+            );
+          });
+          
+          if (acceptButton.asElement()) {
+            this.logger.browser('点击接受邀请按钮');
+            await acceptButton.asElement().click();
+            await page.waitForNavigation({ waitUntil: 'networkidle2', timeout: 15000 });
+          } else {
+            this.logger.browser('未找到邀请按钮，直接进入注册流程');
+          }
+        } catch (e) {
+          // 如果没有找到接受邀请按钮，可能直接是注册页面，继续执行
+          this.logger.browser('未找到邀请按钮，直接进入注册流程');
+        }
+      }
+
       // ========== 第一步: 填写基本信息 ==========
-      // 等待表单加载
       await page.waitForSelector('input', { timeout: 15000 });
       await this.sleep(1000);
       
       // 填写First name
-      const firstNameSelector = 'input[name="firstName"], input[placeholder*="First"], input[placeholder*="first"]';
-      if (await page.locator(firstNameSelector).count() > 0) {
-        await page.fill(firstNameSelector, firstName);
-        await this.sleep(200);
+      const firstNameInput = await page.$('input[name="firstName"], input[placeholder*="First"]');
+      if (firstNameInput) {
+        await firstNameInput.click();
+        await firstNameInput.type(firstName, { delay: 50 });
       }
       
       // 填写Last name
-      const lastNameSelector = 'input[name="lastName"], input[placeholder*="Last"], input[placeholder*="last"]';
-      if (await page.locator(lastNameSelector).count() > 0) {
-        await page.fill(lastNameSelector, lastName);
-        await this.sleep(200);
+      const lastNameInput = await page.$('input[name="lastName"], input[placeholder*="Last"]');
+      if (lastNameInput) {
+        await lastNameInput.click();
+        await lastNameInput.type(lastName, { delay: 50 });
       }
       
       // 填写Email
-      const emailSelector = 'input[type="email"], input[name="email"]';
-      if (await page.locator(emailSelector).count() > 0) {
-        await page.fill(emailSelector, email);
-        await this.sleep(200);
+      const emailInput = await page.$('input[type="email"], input[name="email"]');
+      if (emailInput) {
+        await emailInput.click({ clickCount: 3 });
+        await page.keyboard.press('Backspace');
+        await emailInput.type(email, { delay: 50 });
       }
       
-      // 信息填写完成
       this.logger.success('信息填写完成');
       
       // 同意条款复选框
-      const checkboxSelector = 'input[type="checkbox"]';
-      if (await page.locator(checkboxSelector).count() > 0) {
-        const isChecked = await page.locator(checkboxSelector).isChecked();
-        if (!isChecked) {
-          await page.click(checkboxSelector);
-        }
+      const checkbox = await page.$('input[type="checkbox"]');
+      if (checkbox) {
+        const isChecked = await page.evaluate(el => el.checked, checkbox);
+        if (!isChecked) await checkbox.click();
       }
       
       await this.sleep(1000);
       
       // 点击Continue按钮
-      let clicked = false;
-      
-      // 尝试多种方式找到并点击按钮
-      try {
-        if (await page.locator('button[type="submit"]').count() > 0) {
-          await page.click('button[type="submit"]');
-          clicked = true;
-          // 按钮点击成功
-        }
-      } catch (e) {
-        // 尝试其他方式
-      }
-      
-      if (!clicked) {
-        try {
-          // 方式2: 通过文本内容查找
-          const continueButton = page.locator('button:has-text("Continue"), button:has-text("继续")');
-          if (await continueButton.count() > 0) {
-            await continueButton.first().click();
-            clicked = true;
+      const submitBtn = await page.$('button[type="submit"]');
+      if (submitBtn) {
+        await submitBtn.click();
+      } else {
+        // 备用：通过文本查找
+        const buttons = await page.$$('button');
+        for (const btn of buttons) {
+          const text = await page.evaluate(el => el.textContent, btn);
+          if (text && text.includes('Continue')) {
+            await btn.click();
+            break;
           }
-        } catch (e) {
-          // 继续尝试
         }
-      }
-      
-      if (!clicked) {
-        throw new Error('无法找到Continue按钮');
       }
       
       await this.sleep(3000);
 
       // ========== 第二步: 填写密码 ==========
-      // 等待密码输入页面
       await page.waitForSelector('input[type="password"]', { timeout: 15000 });
       await this.sleep(1000);
       
       // 再次填写Email（如果需要）
-      const emailSelector2 = 'input[type="email"], input[name="email"]';
-      if (await page.locator(emailSelector2).count() > 0) {
-        const emailValue = await page.locator(emailSelector2).inputValue();
+      const emailInput2 = await page.$('input[type="email"], input[name="email"]');
+      if (emailInput2) {
+        const emailValue = await page.evaluate(el => el.value, emailInput2);
         if (!emailValue) {
-          await page.fill(emailSelector2, email);
-          await this.sleep(200);
+          await emailInput2.type(email, { delay: 50 });
         }
       }
       
       // 填写密码
-      const passwordSelectors = await page.locator('input[type="password"]');
-      const passwordCount = await passwordSelectors.count();
-      
-      if (passwordCount >= 1) {
-        await passwordSelectors.nth(0).fill(password);
-        await this.sleep(200);
+      const passwordInputs = await page.$$('input[type="password"]');
+      if (passwordInputs.length >= 1) {
+        await passwordInputs[0].click();
+        await passwordInputs[0].type(password, { delay: 50 });
+      }
+      if (passwordInputs.length >= 2) {
+        await passwordInputs[1].click();
+        await passwordInputs[1].type(password, { delay: 50 });
       }
       
-      // 填写确认密码
-      if (passwordCount >= 2) {
-        await passwordSelectors.nth(1).fill(password);
-        await this.sleep(200);
-      }
-      
-      // 密码完成
       this.logger.success('密码设置完成');
-      
       await this.sleep(1000);
       
-      // 点击Continue按钮
+      // 点击Continue按钮 - 多种方式尝试
       let clicked2 = false;
-      
       try {
-        if (await page.locator('button[type="submit"]').count() > 0) {
-          await page.click('button[type="submit"]');
+        const submitBtn2 = await page.$('button[type="submit"]');
+        if (submitBtn2) {
+          await submitBtn2.click();
           clicked2 = true;
+          this.logger.info('点击Continue按钮');
         }
-      } catch (e) {
-        // 尝试其他方式
-      }
+      } catch (e) {}
       
       if (!clicked2) {
-        try {
-          const continueButton = page.locator('button:has-text("Continue"), button:has-text("继续")');
-          if (await continueButton.count() > 0) {
-            await continueButton.first().click();
+        // 备用：通过文本查找
+        const buttons = await page.$$('button');
+        for (const btn of buttons) {
+          const text = await page.evaluate(el => el.textContent, btn);
+          if (text && (text.includes('Continue') || text.includes('继续'))) {
+            await btn.click();
             clicked2 = true;
+            this.logger.info('通过文本点击Continue');
+            break;
           }
-        } catch (e) {
-          // 继续尝试
         }
-      }
-      
-      if (!clicked2) {
-        throw new Error('无法找到第二个Continue按钮');
       }
       
       await this.sleep(3000);
@@ -401,102 +386,76 @@ class RegistrationBot {
       // ========== 第三步: Cloudflare人机验证 ==========
       this.logger.verify('等待Cloudflare验证');
       
-      // 等待验证完成（需要手动处理）
+      // puppeteer-real-browser 会自动处理 Turnstile
       await this.sleep(10000);
       
       // 点击Continue按钮（验证后）
-      // 查找验证后的Continue按钮
-      let clicked3 = false;
-      
-      // 尝试多次查找按钮
-      for (let attempt = 0; attempt < 3; attempt++) {
+      for (let attempt = 0; attempt < 5; attempt++) {
         try {
-          // 方式1: 通过submit按钮
-          if (await page.locator('button[type="submit"]').count() > 0) {
-            await page.click('button[type="submit"]');
-            clicked3 = true;
-            // 验证后按钮点击成功
+          const submitBtn3 = await page.$('button[type="submit"]');
+          if (submitBtn3) {
+            await submitBtn3.click();
+            this.logger.info('验证后点击Continue');
             break;
           }
-        } catch (e) {
-          // 忽略错误,继续尝试
-        }
+        } catch (e) {}
         
-        if (!clicked3) {
-          try {
-            // 方式2: 通过文本查找
-            const continueButton = page.locator('button:has-text("Continue"), button:has-text("继续"), button:has-text("Next")');
-            if (await continueButton.count() > 0) {
-              await continueButton.first().click();
-              clicked3 = true;
-              // 通过文本找到按钮
+        // 备用方式
+        try {
+          const buttons = await page.$$('button');
+          for (const btn of buttons) {
+            const text = await page.evaluate(el => el.textContent, btn);
+            if (text && (text.includes('Continue') || text.includes('Next'))) {
+              await btn.click();
               break;
             }
-          } catch (e) {
-            // 忽略错误
           }
-        }
+        } catch (e) {}
         
-        if (clicked3) break;
-        
-        // 等待1秒后重试
-        // 等待后重试
         await this.sleep(2000);
-      }
-      
-      if (!clicked3) {
-        // 可能已自动跳转
       }
       
       await this.sleep(3000);
       
-      // 等待验证码输入框出现
+      // ========== 第四步: 邮箱验证码 ==========
       this.logger.step(4, '等待邮箱验证码');
       await page.waitForSelector('input[type="text"], input[name="code"]', { timeout: 60000 });
       
-      // 检查是否被取消
       if (this.shouldCancel()) {
         throw new Error('注册已被用户取消');
       }
       
-      // 获取验证码
+      // 延迟获取验证码，避免混淆
+      this.logger.info('延迟15秒获取验证码');
+      await this.sleep(15000);
+      
       this.logger.code('正在获取邮箱验证码');
       const verificationCode = await this.getVerificationCode(email);
       
       // 输入验证码
-      await page.fill('input[type="text"], input[name="code"]', verificationCode);
-      await this.sleep(200);
+      const codeInputs = await page.$$('input[type="text"], input[name="code"]');
+      if (codeInputs.length === 6) {
+        // 6个独立输入框
+        for (let i = 0; i < 6; i++) {
+          await codeInputs[i].click();
+          await codeInputs[i].type(verificationCode[i], { delay: 50 });
+        }
+      } else if (codeInputs.length >= 1) {
+        // 单个输入框
+        await codeInputs[0].click();
+        await codeInputs[0].type(verificationCode, { delay: 50 });
+      }
       
-      // 验证码处理
       this.logger.codeProcess(verificationCode);
+      await this.sleep(1000);
       
       // 点击验证按钮
-      let verifyClicked = false;
-      
-      try {
-        // 方式1: 通过submit按钮
-        if (await page.locator('button[type="submit"]').count() > 0) {
-          await page.click('button[type="submit"]');
-          verifyClicked = true;
-        }
-      } catch (e) {
-        // 尝试其他方式
+      const createBtn = await page.$('button[type="submit"]');
+      if (createBtn) {
+        await createBtn.click();
       }
       
-      if (!verifyClicked) {
-        try {
-          // 方式2: 通过文本内容查找
-          const continueButton = page.locator('button:has-text("Continue"), button:has-text("Verify"), button:has-text("Create")');
-          if (await continueButton.count() > 0) {
-            await continueButton.first().click();
-            verifyClicked = true;
-          }
-        } catch (e) {
-          // 继续尝试
-        }
-      }
-      
-      if (!verifyClicked) {
+      if (false) {
         // 可能已自动提交
       }
       
@@ -522,9 +481,21 @@ class RegistrationBot {
         error: error.message
       };
     } finally {
+      // 确保浏览器关闭，避免卡住
       if (browser) {
-        await browser.close();
-        this.logger.info('浏览器已关闭');
+        try {
+          await browser.close();
+          this.logger.info('浏览器已关闭');
+        } catch (e) {
+          // 强制关闭
+          try {
+            const pages = await browser.pages();
+            for (const p of pages) {
+              await p.close().catch(() => {});
+            }
+            await browser.close().catch(() => {});
+          } catch (e2) {}
+        }
       }
     }
   }
@@ -673,10 +644,10 @@ class RegistrationBot {
   }
 
   /**
-   * 可取消的延迟函数
+   * 可取消的延迟函数 - 更快响应取消
    */
   async sleep(ms) {
-    const interval = 1000; // 每秒检查一次
+    const interval = 1000;
     const times = Math.ceil(ms / interval);
     
     for (let i = 0; i < times; i++) {

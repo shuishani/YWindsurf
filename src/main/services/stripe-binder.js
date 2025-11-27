@@ -3,6 +3,9 @@
  * 包含所有绑卡相关功能：工具函数、绑卡逻辑、重试逻辑
  * 从检测到在 Stripe 页面开始，执行绑卡操作
  * 适用于所有场景：登录绑卡、注册绑卡、重试绑卡
+ * 
+ * 注意：此模块使用 Playwright API，但实际页面对象可能来自 puppeteer-real-browser
+ * 两者的 API 基本兼容，可以混用
  */
 
 const { createTaggedLogger } = require('../utils/logger');
@@ -119,9 +122,13 @@ async function bindCard(page, logCallback = null, customCardInfo = null) {
   // 使用全局logger实例（logCallback参数保留以兼容旧代码，但不再使用）
   
   try {
-    // 检测是否在 Stripe 页面
+    // 检测是否在绑卡页面（支持 Stripe 独立页面和 Windsurf 内嵌页面）
     const url = page.url();
-    if (!url.includes('checkout.stripe.com')) {
+    const hasPaymentForm = await page.evaluate(() => {
+      return !!document.querySelector('input[name="number"], input[autocomplete="cc-number"], [data-testid="card-accordion-item-button"]');
+    }).catch(() => false);
+    
+    if (!url.includes('checkout.stripe.com') && !url.includes('windsurf.com') && !hasPaymentForm) {
       throw new Error('当前不在绑卡页面');
     }
     
@@ -213,45 +220,33 @@ async function fillAndSubmitCard(page, cardInfo, addressInfo, logger) {
       throw e;
     }
     
-    // 填写卡信息
+    // 填写卡信息 - 使用稳定的输入方式
     logger.step(3, '填写卡信息');
     
-    // 填写卡号
-    const cardInput = await page.$('input[name="number"], input[placeholder*="卡号"], input[autocomplete="cc-number"]');
-    if (cardInput) {
-      await cardInput.click();
-      await sleep(100);
-      await cardInput.fill(cardInfo.cardNumber);
-      await sleep(400);
+    // 辅助函数：稳定输入
+    async function stableType(selector, value, description) {
+      const input = await page.$(selector);
+      if (input) {
+        await input.click({ clickCount: 3 }); // 三击选中全部
+        await sleep(200);
+        await page.keyboard.type(value, { delay: 50 });
+        await sleep(500);
+        logger.progress(`${description}: ${value}`);
+      }
     }
+    
+    // 填写卡号
+    await stableType('input[name="number"], input[autocomplete="cc-number"]', cardInfo.cardNumber, '卡号');
     
     // 填写到期日
-    const expiryInput = await page.$('input[name="expiry"], input[placeholder*="到期"], input[autocomplete="cc-exp"]');
-    if (expiryInput) {
-      await expiryInput.click();
-      await sleep(100);
-      const expiryFormatted = cardInfo.expiry.replace('/', '');
-      await expiryInput.fill(expiryFormatted);
-      await sleep(400);
-    }
+    const expiryFormatted = cardInfo.expiry.replace('/', '');
+    await stableType('input[name="expiry"], input[autocomplete="cc-exp"]', expiryFormatted, '到期日');
     
     // 填写 CVV
-    const cvvInput = await page.$('input[name="cvc"], input[placeholder*="CVC"], input[placeholder*="安全码"], input[autocomplete="cc-csc"]');
-    if (cvvInput) {
-      await cvvInput.click();
-      await sleep(100);
-      await cvvInput.fill(cardInfo.cvv);
-      await sleep(400);
-    }
+    await stableType('input[name="cvc"], input[autocomplete="cc-csc"]', cardInfo.cvv, 'CVV');
     
     // 填写持卡人姓名
-    const nameInput = await page.$('input[name="name"], input[placeholder*="姓名"], input[autocomplete="cc-name"]');
-    if (nameInput) {
-      await nameInput.click();
-      await sleep(100);
-      await nameInput.fill(addressInfo.name);
-      await sleep(400);
-    }
+    await stableType('input[name="name"], input[autocomplete="cc-name"]', addressInfo.name, '姓名');
     
     logger.success('卡信息填写完成');
     
@@ -271,45 +266,117 @@ async function fillAndSubmitCard(page, cardInfo, addressInfo, logger) {
       await sleep(500);
     }
     
-    // 选择国家 - 美国
-    const countrySelect = await page.$('select[name="billingCountry"], select');
-    if (countrySelect) {
-      await countrySelect.selectOption('US');
+    // 按照表单顺序填写：国家 → 地址第1行 → 城市 → 邮编 → 州
+    
+    // 1. 选择国家 - 美国（第一个下拉框）
+    const allSelects = await page.$$('select');
+    if (allSelects.length > 0) {
+      await allSelects[0].select('US');
       await sleep(1500);
+      logger.progress('国家: 美国');
     }
     
-    // 填写地址
-    const addressInput = await page.$('input[name="line1"], input[placeholder*="地址"]');
-    if (addressInput) {
-      await addressInput.click();
-      await sleep(100);
-      await addressInput.fill(addressInfo.address);
-      await sleep(400);
+    // 2. 获取所有文本输入框（按DOM顺序）
+    const allInputs = await page.$$('input[type="text"], input:not([type]):not([type="hidden"]):not([type="checkbox"]):not([type="radio"])');
+    logger.info(`找到 ${allInputs.length} 个文本输入框`);
+    
+    // 填写地址第1行（通常是第一个或第二个输入框，在卡信息之后）
+    // 查找 placeholder 包含"地址"或"Address"的输入框
+    let addressFilled = false;
+    for (const input of allInputs) {
+      const placeholder = await page.evaluate(el => el.placeholder || '', input);
+      const name = await page.evaluate(el => el.name || '', input);
+      if (placeholder.includes('地址') || placeholder.includes('Address') || 
+          name === 'line1' || name === 'addressLine1') {
+        await input.click({ clickCount: 3 });
+        await sleep(200);
+        await page.keyboard.type(addressInfo.address, { delay: 50 });
+        await sleep(500);
+        logger.progress(`地址: ${addressInfo.address}`);
+        addressFilled = true;
+        break;
+      }
     }
     
-    // 填写城市
-    const cityInput = await page.$('input[name="city"], input[placeholder*="城市"]');
-    if (cityInput) {
-      await cityInput.click();
-      await sleep(100);
-      await cityInput.fill(addressInfo.city);
-      await sleep(400);
+    // 如果没找到，尝试按位置填写（账单地址区域的第一个输入框）
+    if (!addressFilled) {
+      const line1Input = await page.$('input[name="line1"], input[name="addressLine1"]');
+      if (line1Input) {
+        await line1Input.click({ clickCount: 3 });
+        await sleep(200);
+        await page.keyboard.type(addressInfo.address, { delay: 50 });
+        await sleep(500);
+        logger.progress(`地址: ${addressInfo.address}`);
+      } else {
+        logger.warning('未找到地址输入框');
+      }
     }
     
-    // 填写邮编
-    const zipInput = await page.$('input[name="zip"], input[placeholder*="邮编"]');
-    if (zipInput) {
-      await zipInput.click();
-      await sleep(100);
-      await zipInput.fill(addressInfo.zip);
-      await sleep(400);
+    // 3. 填写城市 - 通过 placeholder 查找
+    let cityFilled = false;
+    for (const input of allInputs) {
+      const placeholder = await page.evaluate(el => el.placeholder || '', input);
+      if (placeholder.includes('城市') || placeholder.includes('City')) {
+        await input.click({ clickCount: 3 });
+        await sleep(200);
+        await page.keyboard.type(addressInfo.city, { delay: 50 });
+        await sleep(500);
+        logger.progress(`城市: ${addressInfo.city}`);
+        cityFilled = true;
+        break;
+      }
     }
+    if (!cityFilled) {
+      const cityInput = await page.$('input[name="city"], input[name="locality"]');
+      if (cityInput) {
+        await cityInput.click({ clickCount: 3 });
+        await sleep(200);
+        await page.keyboard.type(addressInfo.city, { delay: 50 });
+        await sleep(500);
+        logger.progress(`城市: ${addressInfo.city}`);
+      } else {
+        logger.warning('未找到城市输入框');
+      }
+    }
+    
+    // 4. 填写邮编 - 通过 placeholder 查找
+    let zipFilled = false;
+    for (const input of allInputs) {
+      const placeholder = await page.evaluate(el => el.placeholder || '', input);
+      if (placeholder.includes('邮编') || placeholder.includes('ZIP') || placeholder.includes('Postal')) {
+        await input.click({ clickCount: 3 });
+        await sleep(200);
+        await page.keyboard.type(addressInfo.zip, { delay: 50 });
+        await sleep(500);
+        logger.progress(`邮编: ${addressInfo.zip}`);
+        zipFilled = true;
+        break;
+      }
+    }
+    if (!zipFilled) {
+      const zipInput = await page.$('input[name="zip"], input[name="postalCode"]');
+      if (zipInput) {
+        await zipInput.click({ clickCount: 3 });
+        await sleep(200);
+        await page.keyboard.type(addressInfo.zip, { delay: 50 });
+        await sleep(500);
+        logger.progress(`邮编: ${addressInfo.zip}`);
+      } else {
+        logger.warning('未找到邮编输入框');
+      }
+    }
+    
+    // 5. 州会自动填写，无需手动选择
+    logger.info('州将自动填写');
     
     await sleep(800);
     logger.success('账单信息填写完成');
     
+    // 不操作"保存我的信息"复选框，避免触发电话输入框的循环问题
+    logger.step(5, '跳过保存信息选项');
+    
     // 等待提交按钮就绪
-    logger.step(5, '检查提交按钮');
+    logger.step(6, '检查提交按钮');
     
     let buttonReady = false;
     let attempts = 0;
@@ -319,7 +386,14 @@ async function fillAndSubmitCard(page, cardInfo, addressInfo, logger) {
       attempts++;
       
       const isReady = await page.evaluate(() => {
-        const submitButton = document.querySelector('button[type="submit"]');
+        // 查找"开始试用"按钮
+        const buttons = Array.from(document.querySelectorAll('button, div[role="button"], [class*="button"]'));
+        const submitButton = buttons.find(btn => 
+          btn.textContent.includes('开始试用') || 
+          btn.textContent.includes('Start trial') ||
+          btn.textContent.includes('Submit')
+        ) || document.querySelector('button[type="submit"]');
+        
         if (!submitButton) return false;
         
         const isBasicReady = !submitButton.disabled && 
@@ -350,15 +424,37 @@ async function fillAndSubmitCard(page, cardInfo, addressInfo, logger) {
       logger.warning('等待超时，按钮可能仍不可用');
     }
     
-    logger.info('暂停 3 秒，请检查信息');
-    await sleep(3000);
+    // 跳过人机验证检测（用户手动处理）
+    await sleep(500);
     
-    // 提交
-    logger.step(6, '点击提交按钮');
-    const submitBtn = await page.$('button[type="submit"]');
+    // 提交 - 查找"开始试用"按钮
+    logger.step(8, '点击开始试用按钮');
+    
+    // 尝试多种方式查找按钮
+    let submitBtn = null;
+    
+    // 1. 通过文本查找
+    submitBtn = await page.evaluateHandle(() => {
+      const buttons = Array.from(document.querySelectorAll('button, div[role="button"], [class*="button"]'));
+      return buttons.find(btn => 
+        btn.textContent.includes('开始试用') || 
+        btn.textContent.includes('Start trial') ||
+        btn.textContent.includes('Submit')
+      );
+    });
+    
+    // 2. 如果没找到，尝试传统方式
+    if (!submitBtn || !submitBtn.asElement) {
+      submitBtn = await page.$('button[type="submit"]');
+    }
+    
     if (submitBtn) {
-      await submitBtn.click();
-      logger.success('已点击提交');
+      if (submitBtn.asElement) {
+        await submitBtn.asElement().click();
+      } else {
+        await submitBtn.click();
+      }
+      logger.success('已点击开始试用');
       logger.progress('等待支付处理');
       
       // 立即返回pending状态，让主流程显示按钮
@@ -366,8 +462,8 @@ async function fillAndSubmitCard(page, cardInfo, addressInfo, logger) {
       return { success: false, pending: true };
       
     } else {
-      logger.error('未找到提交按钮');
-      return { success: false, error: '未找到提交按钮' };
+      logger.error('未找到开始试用按钮');
+      return { success: false, error: '未找到开始试用按钮' };
     }
     
   } catch (error) {
@@ -380,9 +476,10 @@ async function fillAndSubmitCard(page, cardInfo, addressInfo, logger) {
  * 重新绑卡（返回账号页面重新开始）
  * 前置条件：page 必须已经在 Stripe 绑卡页面或账号页面
  * @param {Page} page - Playwright页面对象
+ * @param {Object} customCardInfo - 可选的自定义卡信息
  * @returns {Promise<{success: boolean, error?: string}>}
  */
-async function retryBind(page) {
+async function retryBind(page, customCardInfo = null) {
   // 使用统一的带标签logger
   // 所有日志都通过统一系统管理
   
@@ -392,42 +489,76 @@ async function retryBind(page) {
     
     // 返回账号页面
     logger.step(1, '返回账号页面');
-    await page.goto('https://windsurf.com/account/profile', { waitUntil: 'networkidle' });
+    await page.goto('https://windsurf.com/account/profile', { waitUntil: 'networkidle2' });
     await sleep(2000);
     logger.success('已返回账号页面');
     
     // 先尝试点击汉堡菜单（移动端布局）
     logger.step(2, '检查页面布局');
-    const menuButton = await page.$('button[aria-label*="menu"], button:has-text("Open mobile menu")');
-    if (menuButton) {
+    const menuButton = await page.evaluateHandle(() => {
+      // 查找菜单按钮
+      const buttons = Array.from(document.querySelectorAll('button'));
+      return buttons.find(btn => 
+        btn.getAttribute('aria-label')?.includes('menu') ||
+        btn.textContent.includes('Open mobile menu') ||
+        btn.textContent.includes('菜单')
+      );
+    });
+    
+    if (menuButton && menuButton.asElement) {
       logger.info('检测到移动端布局，点击菜单按钮');
-      await menuButton.click();
+      await menuButton.asElement().click();
       await sleep(1000);
       logger.success('菜单已打开');
     }
     
     // 重新点击升级
     logger.step(3, '重新点击升级到 Pro');
-    const context = page.context();
+    const browser = page.browser();
     let stripePage = page;
     
     try {
       // 第一步：点击 Upgrade to Pro
-      await page.click('button:has-text("Upgrade to Pro"), a:has-text("Upgrade to Pro")', { timeout: 10000 });
-      await sleep(2000);
-      logger.success('已点击 Upgrade to Pro');
+      const upgradeBtn = await page.evaluateHandle(() => {
+        const elements = Array.from(document.querySelectorAll('button, a'));
+        return elements.find(el => el.textContent.includes('Upgrade to Pro'));
+      });
       
-      // 第二步：点击 Select plan 按钮
-      logger.progress('查找并点击 Select plan 按钮');
-      const selectPlanBtn = await page.$('button:has-text("Select plan"), a:has-text("Select plan")');
-      if (selectPlanBtn) {
-        logger.success('找到 Select plan 按钮');
-        const pagePromise = context.waitForEvent('page');
-        await selectPlanBtn.click();
+      if (upgradeBtn && upgradeBtn.asElement) {
+        await upgradeBtn.asElement().click();
+        await sleep(2000);
+        logger.success('已点击 Upgrade to Pro');
+      } else {
+        throw new Error('未找到 Upgrade to Pro 按钮');
+      }
+      
+      // 第二步：点击 Start Free Trial 或 Select plan 按钮
+      logger.progress('查找并点击试用按钮');
+      const trialBtn = await page.evaluateHandle(() => {
+        const elements = Array.from(document.querySelectorAll('button, a'));
+        return elements.find(el => 
+          el.textContent.includes('Start Free Trial') ||
+          el.textContent.includes('Select plan') ||
+          el.textContent.includes('开始试用')
+        );
+      });
+      
+      if (trialBtn && trialBtn.asElement) {
+        logger.success('找到试用按钮');
+        
+        // 监听新页面
+        const newPagePromise = new Promise(resolve => {
+          browser.once('targetcreated', async target => {
+            const newPage = await target.page();
+            resolve(newPage);
+          });
+        });
+        
+        await trialBtn.asElement().click();
         
         // 等待新的 Stripe 页面
         const newPage = await Promise.race([
-          pagePromise,
+          newPagePromise,
           sleep(10000).then(() => null)
         ]);
         
@@ -435,25 +566,37 @@ async function retryBind(page) {
           stripePage = newPage;
           logger.success('新的绑卡页面已打开');
         } else {
-          // 如果没有新页面，检查当前页面
-          const pages = context.pages();
-          for (const p of pages) {
-            if (p.url().includes('checkout.stripe.com')) {
-              stripePage = p;
-              break;
+          // 如果没有新页面，检查当前页面是否有绑卡表单
+          const hasPaymentForm = await page.evaluate(() => {
+            return !!document.querySelector('input[name="number"], input[autocomplete="cc-number"]');
+          }).catch(() => false);
+          
+          if (hasPaymentForm) {
+            stripePage = page;
+            logger.success('检测到内嵌绑卡表单');
+          } else {
+            // 检查所有页面
+            const pages = await browser.pages();
+            for (const p of pages) {
+              const url = p.url();
+              if (url.includes('checkout.stripe.com') || url.includes('billing')) {
+                stripePage = p;
+                break;
+              }
             }
           }
         }
         
         await stripePage.bringToFront();
         await sleep(2000);
-        logger.success('已到达新的绑卡页面');
+        logger.success('已到达绑卡页面');
       } else {
-        logger.warning('未找到 Select plan 按钮，尝试直接查找绑卡页面');
+        logger.warning('未找到试用按钮，尝试直接查找绑卡页面');
         // 可能直接打开了 Stripe 页面
-        const pages = context.pages();
+        const pages = await browser.pages();
         for (const p of pages) {
-          if (p.url().includes('checkout.stripe.com')) {
+          const url = p.url();
+          if (url.includes('checkout.stripe.com') || url.includes('billing')) {
             stripePage = p;
             await stripePage.bringToFront();
             logger.success('找到绑卡页面');
@@ -468,17 +611,32 @@ async function retryBind(page) {
         logger.info('尝试访问 billing 页面');
         
         // 尝试访问 billing 页面
-        await page.goto('https://windsurf.com/billing', { waitUntil: 'networkidle', timeout: 15000 });
+        await page.goto('https://windsurf.com/billing', { waitUntil: 'networkidle2', timeout: 15000 });
         await sleep(2000);
         
-        const addPaymentBtn = await page.$('button:has-text("Add payment"), a:has-text("Add payment"), button:has-text("Update payment"), a:has-text("Update payment")');
-        if (addPaymentBtn) {
+        const addPaymentBtn = await page.evaluateHandle(() => {
+          const elements = Array.from(document.querySelectorAll('button, a'));
+          return elements.find(el => 
+            el.textContent.includes('Add payment') || 
+            el.textContent.includes('Update payment')
+          );
+        });
+        
+        if (addPaymentBtn && addPaymentBtn.asElement) {
           logger.success('找到支付设置入口');
-          const pagePromise2 = context.waitForEvent('page');
-          await addPaymentBtn.click();
+          
+          // 监听新页面
+          const newPagePromise2 = new Promise(resolve => {
+            browser.once('targetcreated', async target => {
+              const newPage = await target.page();
+              resolve(newPage);
+            });
+          });
+          
+          await addPaymentBtn.asElement().click();
           
           const newPage2 = await Promise.race([
-            pagePromise2,
+            newPagePromise2,
             sleep(10000).then(() => null)
           ]);
           
@@ -488,7 +646,17 @@ async function retryBind(page) {
             await sleep(2000);
             logger.success('已到达绑卡页面');
           } else {
-            throw new Error('无法打开绑卡页面');
+            // 检查是否有内嵌表单
+            const hasPaymentForm = await page.evaluate(() => {
+              return !!document.querySelector('input[name="number"], input[autocomplete="cc-number"]');
+            }).catch(() => false);
+            
+            if (hasPaymentForm) {
+              stripePage = page;
+              logger.success('检测到内嵌绑卡表单');
+            } else {
+              throw new Error('无法打开绑卡页面');
+            }
           }
         } else {
           throw new Error('未找到支付设置入口');
@@ -498,8 +666,8 @@ async function retryBind(page) {
       }
     }
     
-    // 在新页面上重新绑卡（使用统一日志管理）
-    return await bindCard(stripePage, null);
+    // 在新页面上重新绑卡（使用统一日志管理，传入自定义卡信息）
+    return await bindCard(stripePage, null, customCardInfo);
     
   } catch (error) {
     // 友好的错误提示

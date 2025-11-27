@@ -213,6 +213,11 @@ function registerAllIPC(app, mainWindow) {
 
   ipcMain.handle('batch-register', async (event, config) => {
     const RegistrationBot = require('./services/registration');
+    
+    // 获取邀请链接配置
+    const settings = await getSettings();
+    config.referralLink = settings.referralLink || '';
+    
     const bot = new RegistrationBot(config);
     
     // 保存当前注册实例
@@ -309,60 +314,39 @@ function registerAllIPC(app, mainWindow) {
     }
   });
 
-  // 邮箱配置
+  // ==================== 配置读写（统一处理） ====================
+  
+  // 获取邮箱配置（前端用）
   ipcMain.handle('get-email-config', async () => {
-    try {
-      const settings = await getSettings();
-      
-      // 返回前端期望的完整配置格式
-      const config = {
-        emailDomains: settings.emailDomains || [],
-        emailConfig: settings.emailConfig || {
-          host: '',
-          port: 993,
-          user: '',
-          password: ''
-        }
-      };
-      
-      return JSON.stringify(config);
-    } catch (error) {
-      systemLogger.error(`📧 邮箱配置读取失败: ${error.message}`);
-      return null; // 文件不存在或读取失败
-    }
+    const settings = await getSettings();
+    return JSON.stringify({
+      emailDomains: settings.emailDomains || [],
+      emailConfig: settings.emailConfig || { host: '', port: 993, user: '', password: '' },
+      referralLink: settings.referralLink || ''
+    });
   });
 
+  // 保存邮箱配置
   ipcMain.handle('save-email-config', async (event, config) => {
-    try {
-      const settings = await getSettings();
-      const configObj = typeof config === 'string' ? JSON.parse(config) : config;
-      
-      // 更新邮箱配置和域名
-      if (configObj.emailConfig) {
-        settings.emailConfig = configObj.emailConfig;
-      }
-      if (configObj.emailDomains) {
-        settings.emailDomains = configObj.emailDomains;
-      }
-      
-      await saveSettings(settings);
-      
-      return { success: true };
-    } catch (error) {
-      systemLogger.error(`📧 邮箱配置保存失败: ${error.message}`);
-      return { success: false, message: error.message };
-    }
+    const settings = await getSettings();
+    const cfg = typeof config === 'string' ? JSON.parse(config) : config;
+    if (cfg.emailConfig) settings.emailConfig = cfg.emailConfig;
+    if (cfg.emailDomains) settings.emailDomains = cfg.emailDomains;
+    await saveSettings(settings);
+    return { success: true };
+  });
+
+  // 邀请链接
+  ipcMain.handle('get-referral-link', async () => (await getSettings()).referralLink || '');
+  ipcMain.handle('save-referral-link', async (event, link) => {
+    const settings = await getSettings();
+    settings.referralLink = link;
+    await saveSettings(settings);
+    return { success: true };
   });
 
   // 获取完整设置
-  ipcMain.handle('get-settings', async () => {
-    try {
-      const settings = await getSettings();
-      return { success: true, settings };
-    } catch (error) {
-      return { success: false, error: error.message };
-    }
-  });
+  ipcMain.handle('get-settings', async () => ({ success: true, settings: await getSettings() }));
 
   // 保存完整设置
   ipcMain.handle('save-settings', async (event, newSettings) => {

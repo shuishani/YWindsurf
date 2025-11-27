@@ -1,9 +1,10 @@
 /**
  * 订阅取消模块
  * 负责批量取消 Windsurf Pro 订阅
+ * 使用 puppeteer-real-browser 绕过 Cloudflare 检测
  */
 
-const { chromium } = require('playwright');
+const { connect } = require('puppeteer-real-browser');
 const { createTaggedLogger, Logger } = require('../utils/logger');
 
 // 创建带标签的logger实例
@@ -170,30 +171,49 @@ class SubscriptionCanceller {
       
       // 1. 启动浏览器
       taggedTaskLogger.info('启动浏览器');
-      browser = await chromium.launch({
+      const response = await connect({
         headless: false,
+        fingerprint: true,
+        turnstile: true,
+        tf: true,
         args: ['--disable-blink-features=AutomationControlled']
       });
       
-      context = await browser.newContext({
-        viewport: { width: 900, height: 1000 },
-        userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
-      });
+      browser = response.browser;
+      page = response.page;
       
-      page = await context.newPage();
+      // 设置浏览器窗口大小为 800x900
+      await page.setViewport({ width: 800, height: 900 });
+      
       taggedTaskLogger.info('浏览器已启动');
       
       // 2. 登录账号
       taggedTaskLogger.info('登录账号');
-      await page.goto('https://windsurf.com/account/login', { waitUntil: 'networkidle' });
+      await page.goto('https://windsurf.com/account/login', { waitUntil: 'networkidle2', timeout: 30000 });
       await sleep(1000);
       
-      await page.fill('input[type="email"]', account.email);
-      await page.fill('input[type="password"]', account.password);
-      await page.click('button:has-text("Log in")');
+      // 填写邮箱
+      const emailInput = await page.$('input[type="email"]');
+      if (emailInput) {
+        await emailInput.click();
+        await emailInput.type(account.email, { delay: 50 });
+      }
+      
+      // 填写密码
+      const passwordInput = await page.$('input[type="password"]');
+      if (passwordInput) {
+        await passwordInput.click();
+        await passwordInput.type(account.password, { delay: 50 });
+      }
+      
+      // 点击登录
+      const loginBtn = await page.$('button[type="submit"]');
+      if (loginBtn) {
+        await loginBtn.click();
+      }
       
       try {
-        await page.waitForURL('**/profile', { timeout: 30000 });
+        await page.waitForNavigation({ waitUntil: 'networkidle2', timeout: 30000 });
         taggedTaskLogger.success('登录成功');
       } catch (error) {
         throw new Error('登录超时，可能是账号密码错误');
@@ -204,7 +224,7 @@ class SubscriptionCanceller {
       // 3. 导航到订阅管理页面
       taggedTaskLogger.step(3, '访问订阅管理页面');
       await page.goto('https://windsurf.com/subscription/manage-plan', { 
-        waitUntil: 'networkidle',
+        waitUntil: 'networkidle2',
         timeout: 15000 
       });
       await sleep(2000);
@@ -213,17 +233,28 @@ class SubscriptionCanceller {
       // 4. 检查订阅状态
       taggedTaskLogger.step(4, '检查订阅状态');
       
-      // 先检查是否已经取消（显示 Renew plan 按钮）
-      const renewButton = await page.$('button:has-text("Renew plan")');
+      // 通过文本查找按钮
+      const findButtonByText = async (texts) => {
+        const buttons = await page.$$('button');
+        for (const btn of buttons) {
+          const text = await page.evaluate(el => el.textContent, btn);
+          for (const t of texts) {
+            if (text && text.includes(t)) return btn;
+          }
+        }
+        return null;
+      };
+      
+      // 先检查是否已经取消
+      const renewButton = await findButtonByText(['Renew plan']);
       if (renewButton) {
         taggedTaskLogger.success('订阅已经取消，无需重复操作');
         return { success: true, message: '订阅已经取消', alreadyCancelled: true };
       }
       
       // 查找 Cancel plan 按钮
-      const cancelButton = await page.$('button:has-text("Cancel plan")');
+      const cancelButton = await findButtonByText(['Cancel plan']);
       if (!cancelButton) {
-        // 可能是免费版用户
         const pageContent = await page.content();
         if (pageContent.includes('Free plan')) {
           taggedTaskLogger.warning('账号是免费版，没有订阅');
@@ -233,38 +264,25 @@ class SubscriptionCanceller {
       }
       
       taggedTaskLogger.step(5, '点击取消订阅按钮');
-      
       await cancelButton.click();
       await sleep(2000);
       taggedTaskLogger.success('已点击取消按钮');
       
-      // 6. 选择取消原因（第一个）
+      // 6. 选择取消原因
       taggedTaskLogger.step(6, '选择取消原因');
+      await sleep(2000);
       
-      // 等待原因选择界面出现
-      await page.waitForSelector('input[type="radio"], [role="radio"]', { timeout: 5000 });
-      
-      // 选择第一个原因
-      const firstReason = await page.$('input[type="radio"]:first-of-type, [role="radio"]:first-of-type');
+      const firstReason = await page.$('input[type="radio"]');
       if (firstReason) {
         await firstReason.click();
         await sleep(500);
         taggedTaskLogger.success('已选择取消原因');
-      } else {
-        taggedTaskLogger.warning('未找到原因选项，尝试继续');
       }
       
       // 7. 确认取消
       taggedTaskLogger.step(7, '确认取消订阅');
       
-      // 查找确认按钮（可能的文本：Cancel subscription, Confirm, Continue 等）
-      const confirmButton = await page.$(
-        'button:has-text("Cancel subscription"), ' +
-        'button:has-text("Cancel plan"), ' +
-        'button:has-text("Confirm"), ' +
-        'button:has-text("Continue")'
-      );
-      
+      const confirmButton = await findButtonByText(['Cancel subscription', 'Cancel plan', 'Confirm', 'Continue']);
       if (!confirmButton) {
         throw new Error('未找到确认取消按钮');
       }
@@ -272,31 +290,25 @@ class SubscriptionCanceller {
       await confirmButton.click();
       taggedTaskLogger.progress('等待处理...');
       
-      // 8. 等待跳转到 usage 页面
+      // 8. 等待跳转
       taggedTaskLogger.step(8, '验证取消结果');
-      try {
-        await page.waitForURL('**/subscription/usage', { timeout: 15000 });
-        taggedTaskLogger.success('取消订阅成功！已跳转到 usage 页面');
-        
-        await sleep(2000);
+      await sleep(5000);
+      
+      const currentUrl = page.url();
+      if (currentUrl.includes('/subscription/usage')) {
+        taggedTaskLogger.success('取消订阅成功！');
         return { success: true };
-        
-      } catch (error) {
-        // 检查是否有错误提示
-        const errorMsg = await page.$eval('.error, [role="alert"]', el => el.textContent).catch(() => null);
-        if (errorMsg) {
-          throw new Error(`取消失败: ${errorMsg}`);
-        }
-        
-        // 检查当前URL
-        const currentUrl = page.url();
-        if (currentUrl.includes('/subscription/usage')) {
-          taggedTaskLogger.success('取消订阅成功！');
-          return { success: true };
-        }
-        
-        throw new Error('未能跳转到 usage 页面，取消可能失败');
       }
+      
+      // 再等待一下
+      await sleep(5000);
+      const finalUrl = page.url();
+      if (finalUrl.includes('/subscription/usage')) {
+        taggedTaskLogger.success('取消订阅成功！');
+        return { success: true };
+      }
+      
+      throw new Error('未能跳转到 usage 页面，取消可能失败');
       
     } catch (error) {
       // 友好的错误提示

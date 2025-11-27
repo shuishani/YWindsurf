@@ -1,12 +1,12 @@
 /**
  * Windsurf 登录模块
  * 负责登录账号并导航到 Stripe 绑卡页面
+ * 使用 puppeteer-real-browser 绕过 Cloudflare 检测
  */
 
-const { chromium } = require('playwright');
+const { connect } = require('puppeteer-real-browser');
 const { createTaggedLogger } = require('../utils/logger');
 
-// 创建带标签的logger实例
 const logger = createTaggedLogger('批量绑卡');
 
 function sleep(ms) {
@@ -15,141 +15,162 @@ function sleep(ms) {
 
 /**
  * 登录 Windsurf 账号并导航到 Stripe 绑卡页面
- * @param {string} email - 账号邮箱
- * @param {string} password - 账号密码
- * @param {Function} logCallback - 日志回调函数
- * @returns {Promise<{page, context, browser}>}
  */
 async function loginToStripePage(email, password) {
-  let browser, context, page;
+  let browser, page;
   
   try {
-    logger.info('🚀 启动浏览器并登录...');
+    logger.info('启动浏览器并登录');
     
-    browser = await chromium.launch({
+    // 使用 puppeteer-real-browser
+    // 注意：禁用 turnstile 和 tf，避免干扰表单输入
+    const response = await connect({
       headless: false,
+      fingerprint: true,
+      turnstile: false,  // 禁用自动处理验证码，避免干扰输入
+      tf: false,         // 禁用 tf，避免干扰输入
       args: ['--disable-blink-features=AutomationControlled']
     });
     
-    context = await browser.newContext({
-      viewport: { width: 900, height: 1000 },
-      userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
-    });
+    browser = response.browser;
+    page = response.page;
     
-    page = await context.newPage();
+    // 设置浏览器窗口大小为 800x900
+    await page.setViewport({ width: 800, height: 900 });
     
     // 登录
-    await page.goto('https://windsurf.com/account/login', { waitUntil: 'networkidle' });
-    await page.fill('input[type="email"]', email);
-    await page.fill('input[type="password"]', password);
-    await page.click('button:has-text("Log in")');
-    await page.waitForURL('**/profile', { timeout: 30000 });
+    await page.goto('https://windsurf.com/account/login', { waitUntil: 'networkidle2', timeout: 30000 });
+    await sleep(1000);
     
-    logger.success('✓ 登录成功');
+    // 填写邮箱
+    const emailInput = await page.$('input[type="email"]');
+    if (emailInput) {
+      await emailInput.click();
+      await emailInput.type(email, { delay: 50 });
+    }
+    
+    // 填写密码
+    const passwordInput = await page.$('input[type="password"]');
+    if (passwordInput) {
+      await passwordInput.click();
+      await passwordInput.type(password, { delay: 50 });
+    }
+    
+    // 点击登录按钮 - 简单查找 "Log in"
+    const buttons = await page.$$('button');
+    let loginClicked = false;
+    
+    for (const btn of buttons) {
+      const text = await page.evaluate(el => el.textContent, btn);
+      if (text && text.trim() === 'Log in') {
+        await btn.click();
+        loginClicked = true;
+        logger.info('点击 Log in 按钮');
+        break;
+      }
+    }
+    
+    if (!loginClicked) {
+      throw new Error('未找到 Log in 按钮');
+    }
+    
+    // 等待登录成功
+    await page.waitForNavigation({ waitUntil: 'networkidle2', timeout: 30000 });
+    logger.success('登录成功');
     
     // 点击升级
     await sleep(2000);
     
     try {
-      const pagePromise = context.waitForEvent('page');
-      await page.click('button:has-text("Upgrade to Pro"), a:has-text("Upgrade to Pro")', { timeout: 10000 });
+      // 监听新页面
+      const newPagePromise = new Promise(resolve => {
+        browser.once('targetcreated', async target => {
+          const newPage = await target.page();
+          resolve(newPage);
+        });
+      });
       
-      // 等待 Stripe 页面
-      const newPage = await Promise.race([
-        pagePromise,
-        sleep(10000).then(() => null)
+      // 点击 Upgrade to Pro
+      let upgradeClicked = false;
+      const buttons = await page.$$('button, a');
+      for (const btn of buttons) {
+        const text = await page.evaluate(el => el.textContent, btn);
+        if (text && text.includes('Upgrade to Pro')) {
+          await btn.click();
+          upgradeClicked = true;
+          logger.info('点击 Upgrade to Pro');
+          break;
+        }
+      }
+      
+      if (!upgradeClicked) {
+        throw new Error('未找到 Upgrade to Pro 按钮');
+      }
+      
+      // 等待页面跳转或内嵌表单出现
+      await sleep(3000);
+      
+      // 检查是否打开了新页面（Stripe独立页面）
+      const stripePage = await Promise.race([
+        newPagePromise,
+        sleep(5000).then(() => null)
       ]);
       
-      if (newPage) {
-        page = newPage;
+      if (stripePage) {
+        const stripeUrl = stripePage.url();
+        if (stripeUrl.includes('checkout.stripe.com')) {
+          page = stripePage;
+          await page.bringToFront();
+          await sleep(2000);
+          logger.success('已到达 Stripe 页面');
+        }
+      }
+      
+      // 如果没有新页面，检查当前页面是否有绑卡表单（内嵌模式）
+      const hasPaymentForm = await page.evaluate(() => {
+        return !!document.querySelector('input[name="number"], input[autocomplete="cc-number"], [data-testid="card-accordion-item-button"]');
+      }).catch(() => false);
+      
+      if (hasPaymentForm) {
+        logger.success('检测到内嵌绑卡表单');
       } else {
-        const pages = context.pages();
+        // 检查所有页面
+        const pages = await browser.pages();
         for (const p of pages) {
-          if (p.url().includes('checkout.stripe.com')) {
+          const url = p.url();
+          if (url.includes('checkout.stripe.com')) {
             page = p;
+            await page.bringToFront();
+            logger.success('已到达 Stripe 页面');
             break;
           }
         }
       }
       
-      await page.waitForLoadState('domcontentloaded');
-      logger.success('✓ 已到达 Stripe 页面');
-      
     } catch (clickError) {
-      if (clickError.message.includes('Timeout')) {
-        logger.warning('⚠️ 未找到"Upgrade to Pro"按钮');
-        logger.info('💡 可能原因：');
-        logger.info('   1. 账号已经是 Pro 版本');
-        logger.info('   2. 页面结构发生变化');
-        logger.info('   3. 网络加载较慢');
-        logger.info('🔍 尝试查找其他入口...');
-        
-        // 尝试访问 billing 页面
-        try {
-          await page.goto('https://windsurf.com/billing', { waitUntil: 'networkidle', timeout: 15000 });
-          await sleep(2000);
-          
-          // 查找可能的按钮
-          const addPaymentBtn = await page.$('button:has-text("Add payment"), a:has-text("Add payment"), button:has-text("Update payment"), a:has-text("Update payment")');
-          if (addPaymentBtn) {
-            logger.success('✓ 找到支付设置入口');
-            const pagePromise2 = context.waitForEvent('page');
-            await addPaymentBtn.click();
-            
-            const newPage2 = await Promise.race([
-              pagePromise2,
-              sleep(10000).then(() => null)
-            ]);
-            
-            if (newPage2) {
-              page = newPage2;
-              await page.waitForLoadState('domcontentloaded');
-              logger.success('✓ 已到达 Stripe 页面');
-            } else {
-              throw new Error('无法打开 Stripe 页面，请手动检查账号状态');
-            }
-          } else {
-            throw new Error('未找到支付设置入口，账号可能已绑卡或状态异常');
-          }
-        } catch (billingError) {
-          logger.error('访问 billing 页面失败', billingError.message);
-          throw new Error('无法访问绑卡页面，请检查账号状态或网络连接');
-        }
-      } else {
-        throw clickError;
-      }
+      logger.warning('点击升级按钮失败，尝试 billing 页面');
+      
+      await page.goto('https://windsurf.com/billing', { waitUntil: 'networkidle2', timeout: 15000 });
+      await sleep(2000);
     }
     
-    return { page, context, browser };
+    return { page, browser };
     
   } catch (error) {
-    // 友好的错误提示
     let friendlyMessage = error.message;
     
-    if (error.message.includes('Timeout')) {
-      if (error.message.includes('waitForURL')) {
-        friendlyMessage = '登录超时，可能是账号密码错误或网络问题';
-      } else if (error.message.includes('waitForLoadState')) {
-        friendlyMessage = '页面加载超时，请检查网络连接';
-      } else {
-        friendlyMessage = '操作超时，请检查网络连接或页面状态';
-      }
-    } else if (error.message.includes('Target closed') || error.message.includes('has been closed')) {
-      friendlyMessage = '浏览器窗口被意外关闭，可能是手动关闭或程序异常';
-    } else if (error.message.includes('Navigation failed')) {
-      friendlyMessage = '页面导航失败，请检查网络连接';
+    if (error.message.includes('Timeout') || error.message.includes('timeout')) {
+      friendlyMessage = '操作超时，可能是账号密码错误或网络问题';
+    } else if (error.message.includes('closed')) {
+      friendlyMessage = '浏览器窗口被关闭';
     } else if (error.message.includes('net::ERR')) {
-      friendlyMessage = '网络连接失败，请检查网络设置';
+      friendlyMessage = '网络连接失败';
     }
     
     logger.error('登录失败', friendlyMessage);
     
     if (browser) {
-      try {
-        await browser.close();
-      } catch (e) {
-        // 忽略关闭错误
-      }
+      try { await browser.close(); } catch (e) {}
     }
     throw new Error(friendlyMessage);
   }

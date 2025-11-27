@@ -3,7 +3,7 @@
  */
 
 const { ipcRenderer } = require('electron');
-const { showToast, formatDateTime, handleError, applyDaysLeftStyle, getDaysLeftStyleString, processAccountCredits, addLog, calculateExpiry } = require('../utils/utils');
+const { showToast, formatDateTime, processAccountCredits, calculateExpiry, applyDaysLeftStyle, getDaysLeftStyleString } = require('../utils/utils');
 
 // 刷新系统信息
 async function refreshSystemInfo(showNotification = false) {
@@ -40,7 +40,10 @@ async function refreshSystemInfo(showNotification = false) {
       }
       
       // 基本信息
-      if (accountName) accountName.textContent = info.currentAccount.name || '未知';
+      if (accountName) {
+        accountName.textContent = info.currentAccount.name || '未知';
+        accountName.style.setProperty('color', '#6e6e73', 'important'); // 强制设置灰色
+      }
       if (accountEmail) accountEmail.textContent = info.currentAccount.email || '未登录';
       
       // 使用统一的积分和PRO账号处理函数
@@ -337,11 +340,16 @@ async function startBatchRegister() {
         // 设置自动绑卡标志
         isAutoBinding = true;
         
-        // 调用批量绑卡，使用自动选卡
+        // 调用批量绑卡，使用用户选择的虚拟卡（如果有）
         try {
+          // 获取用户在批量绑卡区域选择的虚拟卡
+          const selectedCardId = typeof window.getSelectedCardId === 'function' 
+            ? window.getSelectedCardId() 
+            : 'auto';
+          
           const bindResult = await ipcRenderer.invoke('batch-bind-cards', { 
             accounts: bindAccounts, 
-            selectedCardId: 'auto' 
+            selectedCardId: selectedCardId 
           });
           
           // 不在这里显示总结，让后端的总结消息作为最终输出

@@ -3,62 +3,47 @@
  */
 
 const { ipcRenderer } = require('electron');
-const path = require('path');
-const { showToast, addLog } = require('../utils/utils');
+const { showToast } = require('../utils/utils');
 
-let currentConfig = {
-  emailDomains: [''],
-  emailConfig: {
-    host: 'imap.qq.com',
-    port: 993,
-    user: '',
-    password: ''
-  }
+// 默认配置
+const DEFAULT_CONFIG = {
+  emailDomains: [],
+  emailConfig: { host: '', port: 993, user: '', password: '' },
+  referralLink: ''
 };
+
+let currentConfig = { ...DEFAULT_CONFIG };
 
 // 加载设置
 async function loadSettings() {
-  // 使用原始路径保存邮箱配置
-  let saved = null;
-  
   try {
-    // 从原始路径读取配置
-    saved = await ipcRenderer.invoke('get-email-config');
+    const saved = await ipcRenderer.invoke('get-email-config');
+    if (saved) currentConfig = JSON.parse(saved);
   } catch (e) {
-    saved = localStorage.getItem('windsurfConfig');
-  }
-  
-  if (saved) {
-    try {
-      currentConfig = JSON.parse(saved);
-    } catch (e) {
-      // 配置解析失败，使用默认配置
-    }
+    // 使用默认配置
   }
   
   renderDomainList();
-  
-  // 加载语言设置
-  const languageSelect = document.getElementById('languageSelect');
-  if (languageSelect) {
-    const savedLang = localStorage.getItem('language') || 'zh-CN';
-    languageSelect.value = savedLang;
-  }
-  
-  // 加载路径设置
+  loadLanguageSetting();
+  loadEmailConfig();
   await loadPathSettings();
-  
-  if (currentConfig.emailConfig) {
-    const imapHost = document.getElementById('imapHost');
-    const imapPort = document.getElementById('imapPort');
-    const imapUser = document.getElementById('imapUser');
-    const imapPassword = document.getElementById('imapPassword');
-    
-    if (imapHost) imapHost.value = currentConfig.emailConfig.host || '';
-    if (imapPort) imapPort.value = currentConfig.emailConfig.port || 993;
-    if (imapUser) imapUser.value = currentConfig.emailConfig.user || '';
-    if (imapPassword) imapPassword.value = currentConfig.emailConfig.password || '';
-  }
+  await loadReferralLink();
+}
+
+// 加载语言设置
+function loadLanguageSetting() {
+  const el = document.getElementById('languageSelect');
+  if (el) el.value = localStorage.getItem('language') || 'zh-CN';
+}
+
+// 加载邮箱配置到表单
+function loadEmailConfig() {
+  const cfg = currentConfig.emailConfig || {};
+  const fields = { imapHost: cfg.host, imapPort: cfg.port || 993, imapUser: cfg.user, imapPassword: cfg.password };
+  Object.entries(fields).forEach(([id, val]) => {
+    const el = document.getElementById(id);
+    if (el) el.value = val || '';
+  });
 }
 
 // 渲染域名列表
@@ -262,6 +247,30 @@ function showPathStatus(message, type) {
   }
 }
 
+// 保存邀请链接
+async function saveReferralLink() {
+  const link = document.getElementById('referralLink').value.trim();
+  try {
+    await ipcRenderer.invoke('save-referral-link', link);
+    showToast('邀请链接已保存', 'success');
+  } catch (error) {
+    showToast('保存失败: ' + error.message, 'error');
+  }
+}
+
+// 加载邀请链接
+async function loadReferralLink() {
+  try {
+    const link = await ipcRenderer.invoke('get-referral-link');
+    const input = document.getElementById('referralLink');
+    if (input && link) {
+      input.value = link;
+    }
+  } catch (error) {
+    // 静默处理
+  }
+}
+
 // 导出模块并暴露到全局
 const settingsModule = {
   loadSettings,
@@ -273,7 +282,9 @@ const settingsModule = {
   loadPathSettings,
   selectDataPath,
   resetDataPath,
-  showPathStatus
+  showPathStatus,
+  saveReferralLink,
+  loadReferralLink
 };
 
 Object.assign(window, settingsModule);

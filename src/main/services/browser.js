@@ -1,4 +1,4 @@
-const { chromium } = require('playwright');
+const { connect } = require('puppeteer-real-browser');
 const { createTaggedLogger } = require('../utils/logger');
 
 /**
@@ -46,66 +46,27 @@ class BrowserAutomation {
   }
 
   /**
-   * 启动浏览器 - 优先使用系统 Chrome
+   * 启动浏览器 - 使用 puppeteer-real-browser
    */
   async launch(headless = false) {
     try {
       this.logger.browser('启动浏览器');
       
-      const launchOptions = {
+      // 使用 puppeteer-real-browser
+      const response = await connect({
         headless: headless,
-        args: [
-          '--disable-blink-features=AutomationControlled',
-          '--disable-features=IsolateOrigins,site-per-process',
-          '--remote-debugging-port=9222' // 启用调试端口，方便后续连接
-        ],
-        defaultViewport: {
-          width: 1280,
-          height: 800
-        },
-        ignoreHTTPSErrors: true
-      };
-      
-      // 如果需要无痕模式，使用 Puppeteer 的原生方式
-      if (!headless) {
-        // 对于可见浏览器，添加无痕模式参数
-        launchOptions.args.push('--incognito');
-      }
-      
-      // 尝试使用系统 Chrome
-      const systemChromePath = this.getSystemChromePath();
-      if (systemChromePath) {
-        this.logger.browser('使用系统 Chrome', systemChromePath);
-        launchOptions.executablePath = systemChromePath;
-        // 使用系统 Chrome 的用户数据目录（可选，但可能导致冲突）
-        // Windows: %LOCALAPPDATA%\Google\Chrome\User Data
-      } else {
-        this.logger.warning('未找到系统 Chrome，使用 Puppeteer 自带的 Chromium');
-      }
-      
-      this.browser = await chromium.launch({
-        headless: headless,
-        args: [
-          '--disable-blink-features=AutomationControlled',
-          '--disable-features=IsolateOrigins,site-per-process'
-        ]
-      });
-      this.isLaunched = true; // 标记为通过 launch() 启动
-      
-      // 创建浏览器上下文
-      const context = await this.browser.newContext({
-        viewport: { width: 1280, height: 800 },
-        userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+        fingerprint: true,
+        turnstile: true,
+        tf: true,
+        args: ['--disable-blink-features=AutomationControlled']
       });
       
-      this.page = await context.newPage();
+      this.browser = response.browser;
+      this.page = response.page;
+      this.isLaunched = true;
       
-      // 设置额外的标志来避免检测
-      await this.page.addInitScript(() => {
-        Object.defineProperty(navigator, 'webdriver', {
-          get: () => undefined,
-        });
-      });
+      // 设置浏览器窗口大小为 800x900
+      await this.page.setViewport({ width: 800, height: 900 });
       
       this.logger.success('浏览器已启动');
       return true;
@@ -116,73 +77,11 @@ class BrowserAutomation {
   }
 
   /**
-   * 连接到系统默认浏览器（通过 CDP）
+   * 连接到系统默认浏览器（已弃用，直接使用 launch）
    */
   async connectToSystemBrowser() {
-    try {
-      this.logger.network('尝试连接到系统默认浏览器');
-      
-      // 尝试连接到 Chrome/Edge 的调试端口
-      const possiblePorts = [9222, 9223, 9224];
-      
-      for (const port of possiblePorts) {
-        try {
-          const browserURL = `http://127.0.0.1:${port}`;
-          this.browser = await puppeteer.connect({
-            browserURL: browserURL,
-            defaultViewport: null
-          });
-          
-          const pages = await this.browser.pages();
-          this.logger.success('成功连接到浏览器', `端口 ${port}，找到 ${pages.length} 个标签页`);
-          
-          // 查找登录页面
-          for (const page of pages) {
-            const url = page.url();
-            if (url && (
-              url.includes('windsurf.com') || 
-              url.includes('codeium.com') ||
-              url.includes('auth') ||
-              url.includes('signin') ||
-              url.includes('login')
-            )) {
-              this.page = page;
-              this.logger.success('找到登录页面', url);
-              return true;
-            }
-          }
-          
-          // 如果没有找到，监听新标签页
-          this.browser.on('targetcreated', async (target) => {
-            const page = await target.page();
-            if (page) {
-              const url = page.url();
-              if (url && (
-                url.includes('windsurf.com') || 
-                url.includes('codeium.com') ||
-                url.includes('auth') ||
-                url.includes('signin') ||
-                url.includes('login')
-              )) {
-                this.page = page;
-                this.logger.success('检测到新的登录页面', url);
-              }
-            }
-          });
-          
-          return true;
-        } catch (err) {
-          // 继续尝试下一个端口
-          continue;
-        }
-      }
-      
-      this.logger.warning('无法连接到系统浏览器，将启动新的浏览器实例');
-      return false;
-    } catch (error) {
-      this.logger.error('连接系统浏览器失败', error.message);
-      return false;
-    }
+    this.logger.warning('connectToSystemBrowser 已弃用，使用 launch 代替');
+    return await this.launch(false);
   }
 
   /**

@@ -31,23 +31,26 @@ function renderCards() {
   const fullCards = virtualCards.filter(c => c.type === 'full' || !c.type);
   
   if (fullCards.length === 0) {
-    tbody.innerHTML = generateEmptyStateHTML(7, '暂无完整卡', '点击"添加"按钮或从BIN生成');
+    tbody.innerHTML = generateEmptyStateHTML(8, '暂无完整卡', '点击"添加"按钮或从BIN生成');
     return;
   }
   
-  tbody.innerHTML = fullCards.map(card => {
+  tbody.innerHTML = fullCards.map((card, index) => {
     const balance = card.balance || 0;
     const bindCount = card.bindCount !== undefined ? card.bindCount : 0;
     const bindClass = bindCount === 0 ? 'badge-card-none' : 'badge-card-bound';
     
     return `
-      <tr>
-        <td><div class="account-email-cell" style="font-size:14px;">${card.number}</div></td>
+      <tr data-id="${card.id}">
+        <td style="width:40px; text-align:center;" onclick="event.stopPropagation()">
+          <input type="checkbox" class="card-checkbox" data-id="${card.id}" onchange="updateCardSelectedCount()">
+        </td>
+        <td><div class="account-email-cell" style="font-size:14px;">${index + 1}. ${card.number}</div></td>
         <td><span style="font-family:monospace; color:#6e6e73;">${card.expMonth}/${card.expYear}</span></td>
         <td><span style="font-family:monospace; color:#6e6e73;">${card.cvv}</span></td>
         <td>$${balance.toFixed(2)}</td>
         <td><span class="badge ${bindClass}">${bindCount} 次</span></td>
-        <td><div style="max-width:200px; overflow:hidden; text-overflow:ellipsis; color:#6e6e73;" title="${card.note || ''}">${card.note || '-'}</div></td>
+        <td><div style="max-width:150px; overflow:hidden; text-overflow:ellipsis; color:#6e6e73;" title="${card.note || ''}">${card.note || '-'}</div></td>
         <td>
           <div style="display:flex; align-items:center; gap:4px;">
             <button class="action-btn" onclick="editCard('${card.id}')" title="编辑">
@@ -194,7 +197,7 @@ async function deleteCard(cardId) {
     return;
   }
   
-  showConfirmDialog(
+  window.showConfirmDialog(
     '删除虚拟卡',
     `确定要删除虚拟卡 ${cardNumber} 吗？\n\n删除后无法恢复，请谨慎操作。`,
     async () => {
@@ -325,30 +328,6 @@ async function importCards() {
   }
 }
 
-// 导出卡片（只导出完整卡）
-function exportCards() {
-  const fullCards = virtualCards.filter(c => c.type === 'full' || !c.type);
-  
-  if (fullCards.length === 0) {
-    showAlertDialog('导出失败', '暂无完整卡可导出', 'warning');
-    return;
-  }
-
-  const content = fullCards.map(card =>
-    `${card.number} ${card.expMonth}${card.expYear} ${card.cvv}`
-  ).join('\n');
-
-  const blob = new Blob([content], { type: 'text/plain' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = `virtual-cards-${new Date().toISOString().split('T')[0]}.txt`;
-  a.click();
-  URL.revokeObjectURL(url);
-
-  showToast('卡片已导出', 'success');
-}
-
 // 初始化事件监听（延迟到DOM加载完成）
 function initCardEvents() {
   // 过期日期自动格式化
@@ -405,17 +384,20 @@ function renderBins() {
   const bins = virtualCards.filter(c => c.type === 'bin');
   
   if (bins.length === 0) {
-    tbody.innerHTML = generateEmptyStateHTML(4, '暂无BIN卡头', '点击"添加"按钮开始添加');
+    tbody.innerHTML = generateEmptyStateHTML(5, '暂无BIN卡头', '点击"添加"按钮开始添加');
     return;
   }
   
-  tbody.innerHTML = bins.map(bin => {
+  tbody.innerHTML = bins.map((bin, index) => {
     const bindCount = bin.bindCount || 0;
     const bindClass = bindCount === 0 ? 'badge-card-none' : 'badge-card-bound';
     
     return `
-      <tr>
-        <td><div class="account-email-cell" style="font-size:14px;">${bin.bin}</div></td>
+      <tr data-id="${bin.id}">
+        <td style="width:40px; text-align:center;" onclick="event.stopPropagation()">
+          <input type="checkbox" class="bin-checkbox" data-id="${bin.id}" onchange="updateBinSelectedCount()">
+        </td>
+        <td><div class="account-email-cell" style="font-size:14px;">${index + 1}. ${bin.bin}</div></td>
         <td><span class="badge ${bindClass}">${bindCount} 次</span></td>
         <td><div style="max-width:200px; overflow:hidden; text-overflow:ellipsis; color:#6e6e73;" title="${bin.note || ''}">${bin.note || '-'}</div></td>
         <td>
@@ -620,29 +602,209 @@ async function importBins() {
   }
 }
 
-// 导出BIN
-function exportBins() {
-  const bins = virtualCards.filter(c => c.type === 'bin');
-  
-  if (bins.length === 0) {
-    alert('暂无BIN可导出');
+// ==================== 多选功能 ====================
+
+// 完整卡多选
+function toggleAllCardCheckboxes(masterCheckbox) {
+  const checkboxes = document.querySelectorAll('#cardsList .card-checkbox');
+  checkboxes.forEach(cb => cb.checked = masterCheckbox.checked);
+  updateCardSelectedCount();
+}
+
+function updateCardSelectedCount() {
+  const checked = document.querySelectorAll('#cardsList .card-checkbox:checked').length;
+  const countEl = document.getElementById('cardSelectedCount');
+  if (countEl) {
+    countEl.textContent = `已选择 ${checked} 个`;
+    countEl.style.display = checked > 0 ? 'inline' : 'none';
+  }
+}
+
+function invertCardSelection() {
+  const checkboxes = document.querySelectorAll('#cardsList .card-checkbox');
+  let count = 0;
+  checkboxes.forEach(cb => {
+    cb.checked = !cb.checked;
+    if (cb.checked) count++;
+  });
+  updateCardSelectedCount();
+  showToast(`反选完成，当前选中 ${count} 张卡`, 'success');
+}
+
+function getSelectedCards() {
+  const selected = [];
+  const checkboxes = document.querySelectorAll('#cardsList .card-checkbox:checked');
+  checkboxes.forEach(cb => {
+    const id = cb.getAttribute('data-id');
+    const card = virtualCards.find(c => c.id === id);
+    if (card) selected.push(card);
+  });
+  return selected;
+}
+
+function exportSelectedCards() {
+  const selected = getSelectedCards();
+  if (selected.length === 0) {
+    showToast('请先选择要导出的卡', 'warning');
     return;
   }
-
-  const content = bins.map(bin =>
-    `${bin.bin} ${bin.note || ''}`
-  ).join('\n');
-
-  const blob = new Blob([content], { type: 'text/plain' });
+  
+  const exportData = selected.map(card => ({
+    number: card.number,
+    expMonth: card.expMonth,
+    expYear: card.expYear,
+    cvv: card.cvv,
+    balance: card.balance || 0,
+    note: card.note || ''
+  }));
+  
+  const content = JSON.stringify(exportData, null, 2);
+  const blob = new Blob([content], { type: 'application/json' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
-  a.download = `bin-cards-${new Date().toISOString().split('T')[0]}.txt`;
+  a.download = `cards-selected-${new Date().toISOString().split('T')[0]}.json`;
   a.click();
   URL.revokeObjectURL(url);
-
-  showToast('BIN已导出', 'success');
+  
+  showToast(`已导出 ${selected.length} 张卡`, 'success');
 }
+
+async function deleteSelectedCards() {
+  const selected = getSelectedCards();
+  if (selected.length === 0) {
+    showToast('请先选择要删除的卡', 'warning');
+    return;
+  }
+  
+  window.showConfirmDialog(
+    '批量删除完整卡',
+    `确定要删除选中的 ${selected.length} 张卡吗？\n\n此操作不可恢复，请谨慎操作！`,
+    async () => {
+      const selectedIds = selected.map(c => c.id);
+      virtualCards = virtualCards.filter(c => !selectedIds.includes(c.id));
+      
+      const result = await ipcRenderer.invoke('save-cards', virtualCards);
+      if (result.success) {
+        renderCards();
+        renderBins();
+        showToast(`已删除 ${selected.length} 张卡`, 'success');
+      }
+    }
+  );
+}
+
+// BIN多选
+function toggleAllBinCheckboxes(masterCheckbox) {
+  const checkboxes = document.querySelectorAll('#binsList .bin-checkbox');
+  checkboxes.forEach(cb => cb.checked = masterCheckbox.checked);
+  updateBinSelectedCount();
+}
+
+function updateBinSelectedCount() {
+  const checked = document.querySelectorAll('#binsList .bin-checkbox:checked').length;
+  const countEl = document.getElementById('binSelectedCount');
+  if (countEl) {
+    countEl.textContent = `已选择 ${checked} 个`;
+    countEl.style.display = checked > 0 ? 'inline' : 'none';
+  }
+}
+
+function invertBinSelection() {
+  const checkboxes = document.querySelectorAll('#binsList .bin-checkbox');
+  let count = 0;
+  checkboxes.forEach(cb => {
+    cb.checked = !cb.checked;
+    if (cb.checked) count++;
+  });
+  updateBinSelectedCount();
+  showToast(`反选完成，当前选中 ${count} 个BIN`, 'success');
+}
+
+function getSelectedBins() {
+  const selected = [];
+  const checkboxes = document.querySelectorAll('#binsList .bin-checkbox:checked');
+  checkboxes.forEach(cb => {
+    const id = cb.getAttribute('data-id');
+    const bin = virtualCards.find(c => c.id === id);
+    if (bin) selected.push(bin);
+  });
+  return selected;
+}
+
+function exportSelectedBins() {
+  const selected = getSelectedBins();
+  if (selected.length === 0) {
+    showToast('请先选择要导出的BIN', 'warning');
+    return;
+  }
+  
+  const exportData = selected.map(bin => ({
+    bin: bin.bin,
+    note: bin.note || ''
+  }));
+  
+  const content = JSON.stringify(exportData, null, 2);
+  const blob = new Blob([content], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `bins-selected-${new Date().toISOString().split('T')[0]}.json`;
+  a.click();
+  URL.revokeObjectURL(url);
+  
+  showToast(`已导出 ${selected.length} 个BIN`, 'success');
+}
+
+async function deleteSelectedBins() {
+  const selected = getSelectedBins();
+  if (selected.length === 0) {
+    showToast('请先选择要删除的BIN', 'warning');
+    return;
+  }
+  
+  window.showConfirmDialog(
+    '批量删除BIN卡头',
+    `确定要删除选中的 ${selected.length} 个BIN吗？\n\n此操作不可恢复，请谨慎操作！`,
+    async () => {
+      const selectedIds = selected.map(c => c.id);
+      virtualCards = virtualCards.filter(c => !selectedIds.includes(c.id));
+      
+      const result = await ipcRenderer.invoke('save-cards', virtualCards);
+      if (result.success) {
+        renderCards();
+        renderBins();
+        showToast(`已删除 ${selected.length} 个BIN`, 'success');
+      }
+    }
+  );
+}
+
+// ==================== 菜单切换（通用） ====================
+function toggleMenu(menuId, otherMenuId) {
+  const menu = document.getElementById(menuId);
+  const otherMenu = document.getElementById(otherMenuId);
+  if (otherMenu) otherMenu.style.display = 'none';
+  if (!menu) return;
+  
+  menu.style.display = menu.style.display === 'none' ? 'block' : 'none';
+  if (menu.style.display === 'block') {
+    setTimeout(() => {
+      const close = (e) => {
+        if (!e.target.closest(`#${menuId}`) && !e.target.closest('button')) {
+          menu.style.display = 'none';
+          document.removeEventListener('click', close);
+        }
+      };
+      document.addEventListener('click', close);
+    }, 0);
+  }
+}
+
+function toggleCardAddMenu() { toggleMenu('cardAddMenu', 'cardMoreMenu'); }
+function toggleCardMoreMenu() { toggleMenu('cardMoreMenu', 'cardAddMenu'); }
+function toggleBinAddMenu() { toggleMenu('binAddMenu', 'binMoreMenu'); }
+function toggleBinMoreMenu() { toggleMenu('binMoreMenu', 'binAddMenu'); }
 
 // 导出模块并暴露到全局
 const cardsModule = {
@@ -655,7 +817,6 @@ const cardsModule = {
   showImportCardsForm,
   hideImportCardsForm,
   importCards,
-  exportCards,
   showBinForm,
   hideBinForm,
   editBin,
@@ -664,7 +825,22 @@ const cardsModule = {
   showImportBinsForm,
   hideImportBinsForm,
   importBins,
-  exportBins
+  // 多选功能
+  toggleAllCardCheckboxes,
+  updateCardSelectedCount,
+  invertCardSelection,
+  exportSelectedCards,
+  deleteSelectedCards,
+  toggleAllBinCheckboxes,
+  updateBinSelectedCount,
+  invertBinSelection,
+  exportSelectedBins,
+  deleteSelectedBins,
+  // 菜单切换
+  toggleCardAddMenu,
+  toggleCardMoreMenu,
+  toggleBinAddMenu,
+  toggleBinMoreMenu
 };
 
 Object.assign(window, cardsModule);

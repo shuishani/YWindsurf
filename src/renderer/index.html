@@ -300,22 +300,37 @@
             <div class="table-toolbar" style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px; padding:0 4px;">
               <div style="display:flex; align-items:center; gap:12px;">
                 <div style="font-size:15px; font-weight:600; color:#1d1d1f;">🎲 BIN卡头列表</div>
-                <span style="font-size:13px; color:#86868b;">绑卡时自动随机生成完整卡号</span>
+                <span id="binSelectedCount" style="font-size:13px; color:#007aff; display:none;">已选择 0 个</span>
               </div>
-              <div style="display:flex; gap:10px;">
-                <button class="modern-btn btn-secondary" onclick="showImportBinsForm()">📂 导入</button>
-                <button class="modern-btn btn-secondary" onclick="exportBins()">📤 导出</button>
-                <button class="modern-btn btn-secondary" onclick="showBinForm()">➕ 添加</button>
+              <div style="display:flex; gap:8px;">
+                <!-- 添加按钮（下拉菜单） -->
+                <div style="position:relative;">
+                  <button class="modern-btn btn-secondary" onclick="toggleBinAddMenu()">➕ 添加 ▾</button>
+                  <div id="binAddMenu" class="action-menu" style="display:none; right:0; left:auto; min-width:120px;">
+                    <div class="action-menu-item" onclick="showBinForm()">✏️ 手动添加</div>
+                    <div class="action-menu-item" onclick="showImportBinsForm()">📂 批量导入</div>
+                  </div>
+                </div>
+                <!-- 更多操作（下拉菜单） -->
+                <div style="position:relative;">
+                  <button class="modern-btn btn-secondary" onclick="toggleBinMoreMenu()">更多操作 ▾</button>
+                  <div id="binMoreMenu" class="action-menu" style="display:none; right:0; left:auto; min-width:140px;">
+                    <div class="action-menu-item" onclick="invertBinSelection()">🔄 反选</div>
+                    <div class="action-menu-item" onclick="exportSelectedBins()">📤 导出选中</div>
+                    <div class="action-menu-item danger" onclick="deleteSelectedBins()">🗑️ 删除选中</div>
+                  </div>
+                </div>
               </div>
             </div>
             
             <table class="accounts-table">
               <thead>
                 <tr>
+                  <th style="width:40px; text-align:center;"><input type="checkbox" onchange="toggleAllBinCheckboxes(this)"></th>
                   <th>BIN卡头</th>
                   <th>绑定次数</th>
                   <th>备注</th>
-                  <th style="width: 100px;">操作</th>
+                  <th style="width: 80px;">操作</th>
                 </tr>
               </thead>
               <tbody id="binsList">
@@ -328,25 +343,40 @@
             <div class="table-toolbar" style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px; padding:0 4px;">
               <div style="display:flex; align-items:center; gap:12px;">
                 <div style="font-size:15px; font-weight:600; color:#1d1d1f;">🎴 完整卡列表</div>
-                <span style="font-size:13px; color:#86868b;">完整虚拟卡信息（包括从BIN生成的卡）</span>
+                <span id="cardSelectedCount" style="font-size:13px; color:#007aff; display:none;">已选择 0 个</span>
               </div>
-              <div style="display:flex; gap:10px;">
-                <button class="modern-btn btn-secondary" onclick="showImportCardsForm()">📂 导入</button>
-                <button class="modern-btn btn-secondary" onclick="exportCards()">📤 导出</button>
-                <button class="modern-btn btn-secondary" onclick="showCardForm()">➕ 添加</button>
+              <div style="display:flex; gap:8px;">
+                <!-- 添加按钮（下拉菜单） -->
+                <div style="position:relative;">
+                  <button class="modern-btn btn-secondary" onclick="toggleCardAddMenu()">➕ 添加 ▾</button>
+                  <div id="cardAddMenu" class="action-menu" style="display:none; right:0; left:auto; min-width:120px;">
+                    <div class="action-menu-item" onclick="showCardForm()">✏️ 手动添加</div>
+                    <div class="action-menu-item" onclick="showImportCardsForm()">📂 批量导入</div>
+                  </div>
+                </div>
+                <!-- 更多操作（下拉菜单） -->
+                <div style="position:relative;">
+                  <button class="modern-btn btn-secondary" onclick="toggleCardMoreMenu()">更多操作 ▾</button>
+                  <div id="cardMoreMenu" class="action-menu" style="display:none; right:0; left:auto; min-width:140px;">
+                    <div class="action-menu-item" onclick="invertCardSelection()">🔄 反选</div>
+                    <div class="action-menu-item" onclick="exportSelectedCards()">📤 导出选中</div>
+                    <div class="action-menu-item danger" onclick="deleteSelectedCards()">🗑️ 删除选中</div>
+                  </div>
+                </div>
               </div>
             </div>
 
             <table class="accounts-table">
               <thead>
                 <tr>
+                  <th style="width:40px; text-align:center;"><input type="checkbox" onchange="toggleAllCardCheckboxes(this)"></th>
                   <th>卡号</th>
                   <th>过期日期</th>
                   <th>CVV</th>
-                  <th>余额 (USD)</th>
+                  <th>余额</th>
                   <th>绑定次数</th>
                   <th>备注</th>
-                  <th style="width: 100px;">操作</th>
+                  <th style="width: 80px;">操作</th>
                 </tr>
               </thead>
               <tbody id="cardsList">
@@ -426,6 +456,19 @@
             </div>
           </div>
 
+          <!-- 注册配置 -->
+          <div class="settings-group">
+            <h3>注册配置</h3>
+            <div class="form-group compact">
+              <label>邀请链接（可选）</label>
+              <div style="display:flex; gap:8px;">
+                <input type="text" id="referralLink" placeholder="留空则不使用邀请链接，如: https://windsurf.com/account/register?referral_code=xxx" style="flex:1;">
+                <button class="btn btn-primary" onclick="saveReferralLink()">保存</button>
+              </div>
+              <div style="font-size:12px; color:#86868b; margin-top:4px;">填入完整的邀请链接，注册时将使用此链接。留空则使用默认注册页面。</div>
+            </div>
+          </div>
+
           <!-- 下部分：左右分栏 -->
           <div class="settings-row compact">
             <!-- YWindsurf 数据路径 (占据更多空间) -->
@@ -481,9 +524,9 @@
       <div class="modal-header" data-i18n="importAccountsTitle">导入账号</div>
       <div class="status-message status-info" style="margin: 0 0 16px 0; padding: 10px 12px; font-size: 12px;">
         <strong>📋 格式说明：</strong><br>
-        • 仅支持 JSON 格式<br>
-        • 格式：<code>{"accounts": [{"email": "邮箱", "password": "密码"}]}</code><br>
-        • 示例：<code>{"accounts": [{"email": "123@qq.com", "password": "abc123"}]}</code>
+        • 仅支持 JSON 数组格式<br>
+        • 格式：<code>[{"email": "邮箱", "password": "密码"}]</code><br>
+        • 示例：<code>[{"email": "123@qq.com", "password": "abc123"}]</code>
       </div>
       <div class="form-group">
         <label data-i18n="selectFile">选择文件</label>
@@ -683,8 +726,16 @@
       </div>
       
       <div class="modal-footer" style="display:flex; gap:12px; justify-content:space-between; align-items:center;">
-        <div style="display:flex; gap:8px;">
+        <div style="display:flex; gap:8px; align-items:center;">
           <button onclick="confirmCurrentBindSuccess()" style="background:#34c759; color:white; border:none; padding:8px 16px; border-radius:6px; cursor:pointer; font-size:13px; font-weight:600;">✅ 绑卡成功</button>
+          <div class="card-selector-wrapper" style="position: relative;">
+            <button class="compact-btn btn-secondary" onclick="toggleRetryCardSelector()" id="retryCardButton" style="padding:8px 12px; font-size:13px;">
+              选择虚拟卡 ▾
+            </button>
+            <div id="retryCardSelectorDropdown" class="card-selector-dropdown" style="display: none; bottom: 100%; top: auto; margin-bottom: 4px;">
+              <!-- 动态加载的卡片选项 -->
+            </div>
+          </div>
           <button onclick="retryCurrentBinding()" style="background:#007aff; color:white; border:none; padding:8px 16px; border-radius:6px; cursor:pointer; font-size:13px; font-weight:600;">🔄 重新绑卡</button>
         </div>
         <button class="btn btn-primary" onclick="hideBindingLog()">关闭</button>

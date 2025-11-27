@@ -93,7 +93,6 @@ class EmailReceiver {
                     return; // 静默跳过不匹配的邮件
                   }
                   
-                  this.logger.email('找到目标验证邮件', `主题: ${subject}, 收件人: ${targetEmail}`);
 
                   // 从邮件内容中提取验证码
                   const emailBody = (parsed.text || parsed.html || '').replace(/<[^>]*>/g, '');
@@ -114,7 +113,6 @@ class EmailReceiver {
                       imap.end();
                       if (!isResolved) {
                         isResolved = true;
-                        this.logger.success('找到验证码', match[1]);
                         resolve(match[1]);
                       }
                       return;
@@ -132,7 +130,6 @@ class EmailReceiver {
       };
 
       imap.once('ready', () => {
-        this.logger.network('IMAP连接成功，开始监听验证码邮件');
         checkMail();
         checkInterval = setInterval(checkMail, 10000); // 每10秒检查一次，减少频率
       });
@@ -147,7 +144,6 @@ class EmailReceiver {
 
       imap.once('end', () => {
         clearInterval(checkInterval);
-        this.logger.network('IMAP连接已关闭');
       });
 
       imap.connect();

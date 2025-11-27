@@ -295,30 +295,6 @@ async function handleError(error, context, showToastMsg = false) {
 }
 
 /**
- * 应用天数样式到元素
- * @param {HTMLElement} element - DOM元素
- * @param {number} days - 剩余天数
- */
-function applyDaysLeftStyle(element, days) {
-  if (!element) return;
-  
-  const style = getDaysLeftStyle(days);
-  element.style.background = style.background;
-  element.style.color = style.color;
-  element.style.border = style.border;
-}
-
-/**
- * 生成天数样式的内联CSS字符串
- * @param {number} days - 剩余天数
- * @returns {string} CSS样式字符串
- */
-function getDaysLeftStyleString(days) {
-  const style = getDaysLeftStyle(days);
-  return `background: ${style.background}; color: ${style.color}; border: ${style.border};`;
-}
-
-/**
  * 生成空状态HTML
  * @param {number} colspan - 列数
  * @param {string} title - 主标题
@@ -337,36 +313,39 @@ function generateEmptyStateHTML(colspan, title, subtitle) {
 }
 
 /**
- * 获取天数剩余的样式（内部函数）
+ * 获取天数剩余的样式
  * @param {number} days - 剩余天数
  * @returns {Object} 样式对象
  */
 function getDaysLeftStyle(days) {
   if (days >= 7) {
-    return {
-      background: '#d4edda',
-      color: '#155724',
-      border: '1px solid #c3e6cb'
-    };
+    return { background: '#d4edda', color: '#155724', border: '1px solid #c3e6cb' };
   } else if (days >= 3) {
-    return {
-      background: '#fff3cd',
-      color: '#856404',
-      border: '1px solid #ffeaa7'
-    };
+    return { background: '#fff3cd', color: '#856404', border: '1px solid #ffeaa7' };
   } else if (days > 0) {
-    return {
-      background: '#f8d7da',
-      color: '#721c24',
-      border: '1px solid #f5c6cb'
-    };
+    return { background: '#f8d7da', color: '#721c24', border: '1px solid #f5c6cb' };
   } else {
-    return {
-      background: '#f5c6cb',
-      color: '#721c24',
-      border: '1px solid #dc3545'
-    };
+    return { background: '#f5c6cb', color: '#721c24', border: '1px solid #dc3545' };
   }
+}
+
+/**
+ * 应用天数样式到元素
+ */
+function applyDaysLeftStyle(element, days) {
+  if (!element) return;
+  const style = getDaysLeftStyle(days);
+  element.style.background = style.background;
+  element.style.color = style.color;
+  element.style.border = style.border;
+}
+
+/**
+ * 生成天数样式的内联CSS字符串
+ */
+function getDaysLeftStyleString(days) {
+  const style = getDaysLeftStyle(days);
+  return `background: ${style.background}; color: ${style.color}; border: ${style.border};`;
 }
 
 module.exports = { 
@@ -376,9 +355,9 @@ module.exports = {
   processAccountCredits,
   formatDateTime,
   handleError,
+  generateEmptyStateHTML,
   applyDaysLeftStyle,
   getDaysLeftStyleString,
-  generateEmptyStateHTML,
   logger
 };
 
@@ -390,9 +369,9 @@ const utilsModule = {
   processAccountCredits,
   formatDateTime,
   handleError,
+  generateEmptyStateHTML,
   applyDaysLeftStyle,
   getDaysLeftStyleString,
-  generateEmptyStateHTML,
   logger
 };
 

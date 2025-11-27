@@ -3,7 +3,7 @@
  */
 
 const { ipcRenderer } = require('electron');
-const { showToast, calculateExpiry, addLog, processAccountCredits, formatDateTime, handleError, generateEmptyStateHTML } = require('../utils/utils');
+const { showToast, calculateExpiry, processAccountCredits, formatDateTime, handleError, generateEmptyStateHTML } = require('../utils/utils');
 
 // ==================== 全局变量 ====================
 let accountsCache = [];
@@ -14,7 +14,6 @@ let selectedCardId = 'auto';
 // 设置当前登录账号缓存
 function setCurrentEmailCache(email) {
   currentEmailCache = email;
-  addLog(`当前登录账号：${email}`);
 }
 
 // ==================== 账号数据管理 ====================
@@ -29,25 +28,35 @@ async function loadAccounts() {
   }
 }
 
-// ==================== 虚拟卡选择器 ====================
-async function toggleCardSelector() {
-  const dropdown = document.getElementById('cardSelectorDropdown');
+// ==================== 虚拟卡选择器（通用） ====================
+
+// 选择器配置
+const cardSelectors = {
+  main: { 
+    dropdownId: 'cardSelectorDropdown', 
+    buttonId: 'selectedCardButton',
+    selectedId: 'auto'
+  },
+  retry: { 
+    dropdownId: 'retryCardSelectorDropdown', 
+    buttonId: 'retryCardButton',
+    selectedId: 'auto'
+  }
+};
+
+// 通用：切换虚拟卡选择器
+async function toggleCardSelectorGeneric(selectorKey) {
+  const config = cardSelectors[selectorKey];
+  const dropdown = document.getElementById(config.dropdownId);
   if (!dropdown) return;
   
   if (dropdown.style.display === 'none' || !dropdown.style.display) {
-    // 显示下拉框
     try {
-      // 加载虚拟卡列表
       const result = await ipcRenderer.invoke('get-cards');
       availableCards = result.success ? result.cards || [] : [];
-      
-      // 渲染卡片选项
-      renderCardOptions();
-      
-      // 显示下拉框
+      renderCardOptionsGeneric(selectorKey);
       dropdown.style.display = 'block';
       
-      // 点击外部关闭
       setTimeout(() => {
         document.addEventListener('click', function closeDropdown(e) {
           if (!e.target.closest('.card-selector-wrapper')) {
@@ -60,22 +69,21 @@ async function toggleCardSelector() {
       showToast('加载虚拟卡失败', 'error');
     }
   } else {
-    // 隐藏下拉框
     dropdown.style.display = 'none';
   }
 }
 
-// 渲染卡片选项
-function renderCardOptions() {
-  const container = document.getElementById('cardSelectorDropdown');
+// 通用：渲染卡片选项
+function renderCardOptionsGeneric(selectorKey) {
+  const config = cardSelectors[selectorKey];
+  const container = document.getElementById(config.dropdownId);
   if (!container) return;
   
   container.innerHTML = '';
   
-  // 添加自动选择选项
+  // 自动选择选项
   const autoOption = document.createElement('div');
-  autoOption.className = `card-option ${selectedCardId === 'auto' ? 'selected' : ''}`;
-  autoOption.setAttribute('data-value', 'auto');
+  autoOption.className = `card-option ${config.selectedId === 'auto' ? 'selected' : ''}`;
   autoOption.innerHTML = `
     <div class="card-icon">🔄</div>
     <div class="card-info">
@@ -84,7 +92,7 @@ function renderCardOptions() {
     </div>
     <div class="card-check">✓</div>
   `;
-  autoOption.addEventListener('click', () => selectCard('auto'));
+  autoOption.addEventListener('click', () => selectCardGeneric(selectorKey, 'auto'));
   container.appendChild(autoOption);
   
   if (availableCards.length === 0) {
@@ -95,113 +103,92 @@ function renderCardOptions() {
     return;
   }
   
-  // 分类：BIN卡头和完整卡
   const binCards = availableCards.filter(c => c.type === 'bin');
   const fullCards = availableCards.filter(c => c.type === 'full');
   
-  // 渲染BIN卡头
-  if (binCards.length > 0) {
-    binCards.forEach(card => {
-      const option = createCardOption(card, 'bin');
-      container.appendChild(option);
-    });
-  }
+  // BIN卡和完整卡分别计算序号
+  let binIndex = 1;
+  let fullIndex = 1;
   
-  // 渲染完整卡
-  if (fullCards.length > 0) {
-    fullCards.forEach(card => {
-      const option = createCardOption(card, 'full');
-      container.appendChild(option);
-    });
-  }
+  binCards.forEach(card => container.appendChild(createCardOptionGeneric(selectorKey, card, 'bin', binIndex++)));
+  fullCards.forEach(card => container.appendChild(createCardOptionGeneric(selectorKey, card, 'full', fullIndex++)));
 }
 
-// 创建卡片选项元素
-function createCardOption(card, type) {
+// 通用：创建卡片选项元素
+function createCardOptionGeneric(selectorKey, card, type, index = 0) {
+  const config = cardSelectors[selectorKey];
   const option = document.createElement('div');
-  option.className = `card-option ${selectedCardId === card.id ? 'selected' : ''}`;
-  option.setAttribute('data-value', card.id);
-  option.setAttribute('data-type', type);
+  option.className = `card-option ${config.selectedId === card.id ? 'selected' : ''}`;
   
-  let icon, mainInfo, subInfo;
+  const indexStr = index > 0 ? `${index}. ` : '';
+  const icon = type === 'bin' ? '🎲' : '💳';
   
+  let mainInfo, subInfo;
   if (type === 'bin') {
-    icon = '🎲';
-    mainInfo = `<div class="card-number">${card.bin ? card.bin.substring(0, 6) + 'xxxxxx' : '未知BIN'}</div>`;
-    subInfo = `<div class="card-details">
-      <span>随机生成卡号</span>
-      <span>${card.bindCount > 0 ? `已绑${card.bindCount}次` : '未使用'}</span>
-    </div>`;
+    mainInfo = `${indexStr}${card.bin ? card.bin.substring(0, 6) + 'xxxxxx' : '未知BIN'}`;
+    subInfo = `<span>随机生成卡号</span><span>${card.bindCount > 0 ? `已绑${card.bindCount}次` : '未使用'}</span>`;
   } else {
-    icon = '💳';
-    // 格式化卡号：每4位加空格
-    const rawNum = card.number || '';
-    const formattedNum = rawNum.replace(/(.{4})/g, '$1 ').trim();
-    
-    mainInfo = `<div class="card-number">${formattedNum}</div>`;
-    
-    // 显示有效期和CVV
-    const expiry = `${card.expMonth || 'MM'}/${card.expYear || 'YY'}`;
-    const cvv = card.cvv || 'CVV';
-    
-    subInfo = `<div class="card-details">
-      <span>EXP: ${expiry}</span>
-      <span>CVV: ${cvv}</span>
-      <span style="margin-left:auto; color:#666;">${card.bindCount > 0 ? `${card.bindCount}次` : '未使用'}</span>
-    </div>`;
+    const formattedNum = (card.number || '').replace(/(.{4})/g, '$1 ').trim();
+    mainInfo = `${indexStr}${formattedNum}`;
+    subInfo = `<span>EXP: ${card.expMonth || 'MM'}/${card.expYear || 'YY'}</span>
+      <span>CVV: ${card.cvv || 'CVV'}</span>
+      <span style="margin-left:auto; color:#666;">${card.bindCount > 0 ? `${card.bindCount}次` : '未使用'}</span>`;
   }
   
   option.innerHTML = `
     <div class="card-icon">${icon}</div>
     <div class="card-info">
-      ${mainInfo}
-      ${subInfo}
+      <div class="card-number">${mainInfo}</div>
+      <div class="card-details">${subInfo}</div>
     </div>
     <div class="card-check">✓</div>
   `;
   
-  option.addEventListener('click', () => selectCard(card.id));
-  
+  option.addEventListener('click', () => selectCardGeneric(selectorKey, card.id));
   return option;
 }
 
-// 选择卡片
-function selectCard(cardId) {
-  selectedCardId = cardId;
+// 通用：选择卡片
+function selectCardGeneric(selectorKey, cardId) {
+  const config = cardSelectors[selectorKey];
+  config.selectedId = cardId;
   
-  // 更新按钮文本
-  updateSelectedCardButton();
+  // 更新全局变量（兼容旧代码）
+  if (selectorKey === 'main') selectedCardId = cardId;
   
-  // 关闭下拉框
-  const dropdown = document.getElementById('cardSelectorDropdown');
-  if (dropdown) {
-    dropdown.style.display = 'none';
-  }
+  updateCardButtonGeneric(selectorKey);
+  
+  const dropdown = document.getElementById(config.dropdownId);
+  if (dropdown) dropdown.style.display = 'none';
 }
 
-// 更新选中卡片按钮的显示
-function updateSelectedCardButton() {
-  const button = document.getElementById('selectedCardButton');
+// 通用：更新按钮显示
+function updateCardButtonGeneric(selectorKey) {
+  const config = cardSelectors[selectorKey];
+  const button = document.getElementById(config.buttonId);
   if (!button) return;
   
-  if (selectedCardId === 'auto') {
+  if (config.selectedId === 'auto') {
     button.textContent = '选择虚拟卡 ▾';
   } else {
-    const selectedCard = availableCards.find(c => c.id === selectedCardId);
-    if (selectedCard) {
-      const cardNumber = selectedCard.type === 'bin' 
-        ? (selectedCard.bin ? selectedCard.bin.substring(0, 6) + 'xxxxxx' : '未知')
-        : (selectedCard.number ? selectedCard.number.substring(0, 4) + ' ' + selectedCard.number.substring(4, 8) + '...' : '未知');
-      const icon = selectedCard.type === 'bin' ? '🎲' : '💳';
-      button.textContent = `${icon} ${cardNumber} ▾`;
+    const card = availableCards.find(c => c.id === config.selectedId);
+    if (card) {
+      const icon = card.type === 'bin' ? '🎲' : '💳';
+      const num = card.type === 'bin' 
+        ? (card.bin ? card.bin.substring(0, 6) + 'xx' : '未知')
+        : (card.number ? card.number.substring(0, 4) + ' ' + card.number.substring(4, 8) + '...' : '未知');
+      button.textContent = `${icon} ${num} ▾`;
     }
   }
 }
 
-// 获取当前选中的卡片ID（用于绑卡功能）
-function getSelectedCardId() {
-  return selectedCardId;
-}
+// 兼容旧接口
+function toggleCardSelector() { toggleCardSelectorGeneric('main'); }
+function toggleRetryCardSelector() { toggleCardSelectorGeneric('retry'); }
+function selectCard(cardId) { selectCardGeneric('main', cardId); }
+function selectRetryCard(cardId) { selectCardGeneric('retry', cardId); }
+function getSelectedCardId() { return cardSelectors.main.selectedId; }
+function getRetrySelectedCardId() { return cardSelectors.retry.selectedId; }
 
 // ==================== 账号数据处理函数 ====================
 
@@ -274,8 +261,9 @@ function calculateAccountStyles(acc) {
 /**
  * 生成账号行HTML
  */
-function generateAccountRowHTML(acc, styles, isCurrentAccount = false) {
+function generateAccountRowHTML(acc, styles, isCurrentAccount = false, index = 0) {
   const rowClass = isCurrentAccount ? 'current-account-row' : '';
+  const indexStr = index > 0 ? `${index}. ` : '';
 
   return `
     <tr data-id="${acc.id}" class="${rowClass}">
@@ -283,7 +271,7 @@ function generateAccountRowHTML(acc, styles, isCurrentAccount = false) {
         <input type="checkbox" class="account-checkbox" data-email="${acc.email}" data-password="${acc.password}" onchange="updateSelectedBindCount()">
       </td>
       <td ondblclick="copyAccountRow('${acc.email}', '${acc.password}'); event.stopPropagation();" style="cursor: pointer;" title="双击复制账号密码">
-        <div class="account-email-cell">${acc.email}</div>
+        <div class="account-email-cell">${indexStr}${acc.email}</div>
       </td>
       <td>
         <span class="badge ${styles.typeBadgeClass}">${styles.typeLabel}</span>
@@ -348,13 +336,13 @@ async function renderAccounts() {
     return;
   }
 
-  // 渲染账号列表
-  tbody.innerHTML = accountsCache.map(acc => {
+  // 渲染账号列表（带序号）
+  tbody.innerHTML = accountsCache.map((acc, index) => {
     const formattedAcc = formatAccountData(acc);
     const styles = calculateAccountStyles(formattedAcc);
     const isCurrentAccount = currentEmail && acc.email === currentEmail;
     
-    return generateAccountRowHTML(formattedAcc, styles, isCurrentAccount);
+    return generateAccountRowHTML(formattedAcc, styles, isCurrentAccount, index + 1);
   }).join('');
 }
 
@@ -1112,35 +1100,6 @@ async function importAccounts() {
   }
 }
 
-// 导出选中账号
-async function exportAccounts() {
-  logger.info('开始导出选中账号...');
-
-  // 获取选中的账号
-  const selectedAccounts = getSelectedAccounts();
-  
-  if (selectedAccounts.length === 0) {
-    showAlertDialog('导出失败', '请先选择要导出的账号', 'warning');
-    return;
-  }
-
-  // 导出为直接的数组格式
-  const exportData = selectedAccounts.map(acc => ({
-    email: acc.email,
-    password: acc.password
-  }));
-
-  const content = JSON.stringify(exportData, null, 2);
-  const blob = new Blob([content], { type: 'application/json' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = `selected-accounts-${new Date().toISOString().split('T')[0]}.json`;
-  a.click();
-  URL.revokeObjectURL(url);
-
-  logger.successWithToast(`成功导出 ${selectedAccounts.length} 个选中账号`, `已导出 ${selectedAccounts.length} 个账号`);
-}
 
 
 // 初始化事件监听
@@ -1258,8 +1217,9 @@ async function selectUnboundAccounts() {
   // 获取当前登录账号的邮箱，避免选中它（使用缓存）
   let currentEmail = currentEmailCache;
   
-  accountsCache.forEach((account, index) => {
-    const checkbox = document.querySelector(`#accountsList tr:nth-child(${index + 1}) .account-checkbox`);
+  accountsCache.forEach(account => {
+    // 通过 data-email 属性查找复选框
+    const checkbox = document.querySelector(`#accountsList .account-checkbox[data-email="${account.email}"]`);
     if (!checkbox) return;
     
     // 跳过当前登录的账号
@@ -1305,8 +1265,9 @@ function toggleQuickFilterMenu() {
 function selectAccountsForCleanup() {
   let count = 0;
   
-  accountsCache.forEach((account, index) => {
-    const checkbox = document.querySelector(`#accountsList tr:nth-child(${index + 1}) .account-checkbox`);
+  accountsCache.forEach(account => {
+    // 通过 data-email 属性查找复选框
+    const checkbox = document.querySelector(`#accountsList .account-checkbox[data-email="${account.email}"]`);
     if (!checkbox) return;
     
     let canCleanup = false;
@@ -1493,15 +1454,18 @@ async function exportSelectedAccounts() {
     return;
   }
   
-  // 格式化账号数据
-  const exportData = selectedAccounts.map(acc => `${acc.email} ${acc.password || ''}`).join('\n');
+  // 导出为 JSON 格式（直接数组，只包含 email 和 password）
+  const exportData = selectedAccounts.map(acc => ({
+    email: acc.email,
+    password: acc.password
+  }));
   
-  // 创建下载
-  const blob = new Blob([exportData], { type: 'text/plain' });
+  const content = JSON.stringify(exportData, null, 2);
+  const blob = new Blob([content], { type: 'application/json' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
-  a.download = `windsurf_accounts_selected_${new Date().getTime()}.txt`;
+  a.download = `windsurf_accounts_selected_${new Date().toISOString().split('T')[0]}.json`;
   document.body.appendChild(a);
   a.click();
   document.body.removeChild(a);
@@ -1531,7 +1495,9 @@ async function deleteSelectedAccounts() {
       
       for (const account of selectedAccounts) {
         try {
-          const result = await ipcRenderer.invoke('delete-account', account.email);
+          // 使用 id 删除，如果没有 id 则使用 email
+          const deleteId = account.id || account.email;
+          const result = await ipcRenderer.invoke('delete-account', deleteId);
           if (result.success) {
             successCount++;
           } else {
@@ -1557,12 +1523,20 @@ function getSelectedAccounts() {
   const selected = [];
   const checkboxes = document.querySelectorAll('#accountsList .account-checkbox:checked');
   
-  checkboxes.forEach((checkbox, index) => {
-    // 通过复选框找到对应的账号索引
-    const row = checkbox.closest('tr');
-    const rowIndex = Array.from(row.parentElement.children).indexOf(row);
-    if (accountsCache[rowIndex]) {
-      selected.push(accountsCache[rowIndex]);
+  checkboxes.forEach(checkbox => {
+    // 通过 data 属性获取账号信息
+    const email = checkbox.getAttribute('data-email');
+    const password = checkbox.getAttribute('data-password');
+    
+    if (email) {
+      // 从缓存中查找完整的账号信息
+      const account = accountsCache.find(acc => acc.email === email);
+      if (account) {
+        selected.push(account);
+      } else {
+        // 如果缓存中没有，使用基本信息
+        selected.push({ email, password });
+      }
     }
   });
   
@@ -1735,7 +1709,14 @@ async function confirmBindSuccess(email) {
 async function retryBinding(email, password) {
   
   try {
-    const result = await ipcRenderer.invoke('retry-bind-card', { email, password });
+    // 获取重新绑卡选择器中选中的虚拟卡
+    const cardId = getRetrySelectedCardId();
+    
+    const result = await ipcRenderer.invoke('retry-bind-card', { 
+      email, 
+      password, 
+      selectedCardId: cardId 
+    });
     
     if (result && result.success) {
       
@@ -2090,7 +2071,6 @@ const accountsModule = {
   renderAccounts,
   deleteAccountFromTable,
   updateAccountStats,
-  exportAccounts,
   showAddAccountForm,
   hideAddAccountForm,
   addManualAccount,
@@ -2128,7 +2108,9 @@ const accountsModule = {
   exportSelectedAccounts,
   deleteSelectedAccounts,
   toggleCardSelector,
+  toggleRetryCardSelector,
   getSelectedCardId,
+  getRetrySelectedCardId,
   hideBindingLog,
   confirmCurrentBindSuccess,
   retryCurrentBinding,

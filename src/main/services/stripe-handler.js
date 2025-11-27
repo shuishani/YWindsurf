@@ -20,7 +20,7 @@ const failedAccountBrowsers = new Map(); // key: email, value: { page, context, 
 
 // 虚拟卡文件路径（使用统一路径配置）
 const windsurfPaths = require('../../shared/config/windsurf-paths');
-const CARDS_FILE = path.join(windsurfPaths.getDataDir(), 'virtual-cards.json');
+const CARDS_FILE = path.join(windsurfPaths.getJsonDataDir(), 'virtual-cards.json');
 
 /**
  * 根据ID选择指定的虚拟卡
@@ -35,15 +35,21 @@ async function selectCardById(cardId) {
     const card = cards.find(c => c.id === cardId);
     
     if (card) {
+      // 完整卡字段是 number，不是 cardNumber
+      const cardDisplay = card.type === 'bin' ? card.bin : (card.number || card.cardNumber || '完整卡');
+      bindLogger.success(`找到卡: ${cardDisplay}`);
       return {
         card: card,
         type: card.type
       };
     }
     
+    // 没找到，列出所有卡的ID
+    bindLogger.warning(`未找到ID为 ${cardId} 的卡`);
+    bindLogger.info(`可用卡ID: ${cards.map(c => c.id).join(', ')}`);
     return null;
   } catch (error) {
-    logger.error('读取虚拟卡失败', error.message);
+    bindLogger.error(`读取虚拟卡失败: ${error.message}`);
     return null;
   }
 }
@@ -90,9 +96,11 @@ async function selectAvailableCard() {
       };
     }
     
+    bindLogger.warning('没有找到可用的卡（BIN或完整卡）');
     return null;
   } catch (error) {
-    logger.error('读取虚拟卡失败', error.message);
+    bindLogger.error(`读取虚拟卡失败: ${error.message}`);
+    bindLogger.info(`文件路径: ${CARDS_FILE}`);
     return null;
   }
 }
@@ -203,7 +211,7 @@ async function startAutoDetection(email, page, browser, cardId = null, cardInfo 
   // 异步执行检测
   (async () => {
     try {
-      bindLogger.info(`🔍 后台自动检测已启动...`);
+      bindLogger.info(`后台自动检测已启动...`);
       
       while (true) {
         try {
@@ -213,7 +221,10 @@ async function startAutoDetection(email, page, browser, cardId = null, cardInfo 
           if (currentUrl.includes('payment-success') || currentUrl.includes('billing/payment-success')) {
             // 使用统一的带标签logger
             bindLogger.success('自动检测到绑卡成功页面');
-            bindLogger.success(`🎉 绑卡成功，浏览器将自动关闭`);
+            bindLogger.success('绑卡成功，浏览器将自动关闭');
+            
+            // 先从Map中移除，防止浏览器关闭事件重复触发
+            failedAccountBrowsers.delete(email);
             
             // 如果是BIN卡，保存生成的完整卡信息
             if (cardInfo && cardInfo.cardType === 'bin') {
@@ -227,18 +238,15 @@ async function startAutoDetection(email, page, browser, cardId = null, cardInfo 
               bindLogger.info('虚拟卡使用次数已更新');
             }
             
+            // 更新账号绑卡状态
+            await updateAccountBindStatus(email, true);
+            
             // 关闭浏览器
             try {
               await browser.close();
             } catch (e) {
               // 忽略关闭错误
             }
-            
-            // 从Map中移除
-            failedAccountBrowsers.delete(email);
-            
-            // 更新账号绑卡状态
-            await updateAccountBindStatus(email, true);
             
             break;
           }
@@ -316,7 +324,7 @@ function initStripeHandlers(win) {
           // 提交完成，等待用户确认
           pendingCount++;
           systemLog(`绑卡已提交，等待用户确认`);
-          bindLogger.info(`💡 请在浏览器中查看结果，然后点击下方按钮`);
+          bindLogger.info(`请在浏览器中查看结果，然后点击下方按钮`);
           
           // 保存浏览器实例、卡ID和卡信息
           failedAccountBrowsers.set(acc.email, { page, context, browser, cardId: cardInfo.cardId, cardInfo });
@@ -344,7 +352,7 @@ function initStripeHandlers(win) {
           // 提交失败
           failCount++;
           systemLog(`绑卡失败: ${result.error}`);
-          bindLogger.warning(`⚠️ 浏览器保持打开状态，可以重新绑卡`);
+          bindLogger.warning(`浏览器保持打开状态，可以重新绑卡`);
           
           // 保存浏览器实例
           failedAccountBrowsers.set(acc.email, { page, context, browser });
@@ -364,7 +372,7 @@ function initStripeHandlers(win) {
         
         // 如果浏览器已打开，保存实例供重试
         if (browser && page) {
-          bindLogger.warning(`⚠️ 浏览器保持打开状态，可以重新绑卡`);
+          bindLogger.warning(`浏览器保持打开状态，可以重新绑卡`);
           failedAccountBrowsers.set(acc.email, { page, context, browser });
           
           // 更新按钮对应的账号
@@ -458,7 +466,7 @@ function initStripeHandlers(win) {
   });
   
   // 重试单个账号绑卡（使用保存的浏览器实例）
-  ipcMain.handle('retry-bind-card', async (event, { email, password }) => {
+  ipcMain.handle('retry-bind-card', async (event, { email, password, selectedCardId }) => {
     
     const systemLog = (msg) => {
       // 发送到系统日志
@@ -476,8 +484,24 @@ function initStripeHandlers(win) {
       
       const { page, context, browser } = savedBrowser;
       
+      // 如果指定了新的卡，生成新的卡信息
+      let newCardInfo = null;
+      if (selectedCardId && selectedCardId !== 'auto') {
+        const cardData = await selectCardById(selectedCardId);
+        if (cardData) {
+          newCardInfo = generateCardInfo(cardData);
+          bindLogger.info(`使用新选择的卡: ${newCardInfo.cardNumber.substring(0, 8)}****`);
+        }
+      } else if (selectedCardId === 'auto') {
+        const cardData = await selectAvailableCard();
+        if (cardData) {
+          newCardInfo = generateCardInfo(cardData);
+          bindLogger.info(`自动选择卡: ${newCardInfo.cardNumber.substring(0, 8)}****`);
+        }
+      }
+      
       // 执行重新绑卡（使用统一日志管理）
-      const result = await retryBind(page);
+      const result = await retryBind(page, newCardInfo);
       
       if (result.success) {
         // 重新绑卡成功，关闭浏览器
@@ -526,7 +550,7 @@ function initStripeHandlers(win) {
       } else {
         // 重新绑卡失败，保持浏览器打开
         systemLog(`重试绑卡失败: ${result.error || '未知错误'}`);
-        bindLogger.warning(`⚠️ 浏览器保持打开状态，可以再次重试`);
+        bindLogger.warning(`浏览器保持打开状态，可以再次重试`);
         
         // 更新按钮对应的账号
         mainWindow.webContents.send('show-binding-actions', {
