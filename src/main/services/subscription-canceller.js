@@ -171,6 +171,7 @@ class SubscriptionCanceller {
       
       // 1. 启动浏览器
       taggedTaskLogger.info('启动浏览器');
+      
       const response = await connect({
         headless: false,
         fingerprint: true,

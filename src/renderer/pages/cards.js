@@ -184,20 +184,7 @@ async function deleteCard(cardId) {
   const card = virtualCards.find(c => c.id === cardId);
   const cardNumber = card ? card.number.replace(/(\d{4})(?=\d)/g, '$1 ') : '未知卡号';
   
-  if (typeof window.showConfirmDialog !== 'function') {
-    if (confirm('确定要删除这张虚拟卡吗？')) {
-      virtualCards = virtualCards.filter(c => c.id !== cardId);
-      const result = await ipcRenderer.invoke('save-cards', virtualCards);
-      if (result.success) {
-        renderCards();
-        renderBins();
-        showToast('卡片已删除', 'success');
-      }
-    }
-    return;
-  }
-  
-  window.showConfirmDialog(
+  showConfirmDialog(
     '删除虚拟卡',
     `确定要删除虚拟卡 ${cardNumber} 吗？\n\n删除后无法恢复，请谨慎操作。`,
     async () => {
@@ -501,15 +488,23 @@ async function saveBin() {
 
 // 删除BIN
 async function deleteBin(binId) {
-  if (!confirm('确定要删除这个BIN卡头吗？')) return;
-
-  virtualCards = virtualCards.filter(c => c.id !== binId);
-  const result = await ipcRenderer.invoke('save-cards', virtualCards);
-  if (result.success) {
-    renderBins();
-    renderCards();  // 同时更新完整卡列表
-    showToast('BIN已删除', 'success');
-  }
+  // 获取BIN信息用于显示
+  const bin = virtualCards.find(c => c.id === binId);
+  const binNumber = bin ? (bin.bin ? bin.bin.substring(0, 6) + 'xxxxxx' : '未知BIN') : '未知BIN';
+  
+  showConfirmDialog(
+    '删除BIN卡头',
+    `确定要删除BIN卡头 ${binNumber} 吗？\n\n删除后无法恢复，请谨慎操作。`,
+    async () => {
+      virtualCards = virtualCards.filter(c => c.id !== binId);
+      const result = await ipcRenderer.invoke('save-cards', virtualCards);
+      if (result.success) {
+        renderBins();
+        renderCards();  // 同时更新完整卡列表
+        showToast('BIN已删除', 'success');
+      }
+    }
+  );
 }
 
 // 显示导入BIN表单
@@ -677,7 +672,7 @@ async function deleteSelectedCards() {
     return;
   }
   
-  window.showConfirmDialog(
+  showConfirmDialog(
     '批量删除完整卡',
     `确定要删除选中的 ${selected.length} 张卡吗？\n\n此操作不可恢复，请谨慎操作！`,
     async () => {
@@ -763,7 +758,7 @@ async function deleteSelectedBins() {
     return;
   }
   
-  window.showConfirmDialog(
+  showConfirmDialog(
     '批量删除BIN卡头',
     `确定要删除选中的 ${selected.length} 个BIN吗？\n\n此操作不可恢复，请谨慎操作！`,
     async () => {

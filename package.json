@@ -24,6 +24,7 @@
     "@bufbuild/protobuf": "^2.10.1",
     "axios": "^1.13.2",
     "better-sqlite3": "^9.2.2",
+    "chrome-launcher": "^1.2.1",
     "electron-squirrel-startup": "^1.0.1",
     "imap": "^0.8.19",
     "mailparser": "^3.6.5",
@@ -53,6 +54,7 @@
     "win": {
       "target": "nsis"
     },
+    "asar": false,
     "nsis": {
       "oneClick": false,
       "allowToChangeInstallationDirectory": true,

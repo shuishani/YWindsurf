@@ -252,19 +252,8 @@ function addRegistrationLog(message, type = 'info') {
   
   logContent.appendChild(logLine);
   
-  // 多重保障确保滚动到底部
-  const scrollToBottom = () => {
-    logContent.scrollTop = logContent.scrollHeight;
-  };
-  
-  // 立即滚动
-  scrollToBottom();
-  
-  // 使用 requestAnimationFrame 再次确保滚动
-  requestAnimationFrame(() => {
-    scrollToBottom();
-    setTimeout(scrollToBottom, 10);
-  });
+  // 强制滚动到底部 - 使用 scrollIntoView 更可靠
+  logLine.scrollIntoView({ behavior: 'auto', block: 'end' });
 }
 
 // 批量注册

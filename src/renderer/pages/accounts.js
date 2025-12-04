@@ -349,26 +349,30 @@ async function renderAccounts() {
 // ==================== 统计数据 ====================
 function updateAccountStats() {
   const total = accountsCache.length;
-  let available = 0;    // 可用账号
-  let warning = 0;      // 即将耗尽
-  let unavailable = 0;  // 不可用
+  let available = 0;    // 可用账号：未过期且未用完
+  let warning = 0;      // 即将耗尽：剩余<=3天 或 剩余积分<=10%
+  let unavailable = 0;  // 不可用：已过期 或 已用完
 
   accountsCache.forEach(acc => {
-    const expiry = calculateExpiry(acc.createdAt);
+    // 使用 expiresAt 计算到期时间
+    const expiry = calculateExpiry(acc.createdAt, acc.expiresAt);
     const isExpired = expiry.isExpired;
+    const daysLeft = expiry.daysLeft; // 可能是 null（无到期时间）
     
-    // 计算用量百分比
+    // 计算用量百分比和剩余百分比
     let usageRate = 0;
+    let remainingRate = 100;
     if (acc.usedPromptCredits !== undefined && acc.monthlyPromptCredits !== undefined && acc.monthlyPromptCredits > 0) {
       usageRate = (acc.usedPromptCredits / acc.monthlyPromptCredits) * 100;
+      remainingRate = 100 - usageRate;
     }
     
-    // 简单分类判断
+    // 分类判断
     if (isExpired || usageRate >= 100) {
-      // 不可用：已过期 或 用量用完
+      // 不可用：已过期 或 积分用完
       unavailable++;
-    } else if (usageRate > 90 || expiry.daysLeft <= 3) {
-      // 即将耗尽：用量>90% 或 3天内过期
+    } else if (remainingRate <= 10 || (daysLeft !== null && daysLeft <= 3)) {
+      // 即将耗尽：剩余积分<=10% 或 剩余<=3天（只有有到期时间时才判断天数）
       warning++;
     } else {
       // 可用：其他情况
@@ -1594,8 +1598,8 @@ function addBindingLog(message, email = null) {
   
   logContent.appendChild(logEntry);
   
-  // 自动滚动到底部
-  logContent.scrollTop = logContent.scrollHeight;
+  // 强制滚动到底部 - 使用 scrollIntoView 更可靠
+  logEntry.scrollIntoView({ behavior: 'auto', block: 'end' });
 }
 
 // 全局变量：当前正在处理的账号
@@ -1799,23 +1803,14 @@ function addSwitchLog(message, type = 'info') {
   
   const color = typeColors[type] || '#1d1d1f';
   // 后端已包含完整的时间戳,直接显示
-  const logEntry = `<div style="color:${color}; margin-bottom:4px;">${message}</div>`;
+  const logEntry = document.createElement('div');
+  logEntry.style.cssText = `color:${color}; margin-bottom:4px;`;
+  logEntry.innerHTML = message;
   
-  logContent.innerHTML += logEntry;
+  logContent.appendChild(logEntry);
   
-  // 多重保障确保滚动到底部
-  const scrollToBottom = () => {
-    logContent.scrollTop = logContent.scrollHeight;
-  };
-  
-  // 立即滚动
-  scrollToBottom();
-  
-  // 使用 requestAnimationFrame 再次确保滚动
-  requestAnimationFrame(() => {
-    scrollToBottom();
-    setTimeout(scrollToBottom, 10);
-  });
+  // 强制滚动到底部 - 使用 scrollIntoView 更可靠
+  logEntry.scrollIntoView({ behavior: 'auto', block: 'end' });
 }
 
 // 更新切号进度
@@ -1949,8 +1944,8 @@ function addCancelLog(message, type = 'info') {
   
   logContent.appendChild(logLine);
   
-  // 自动滚动到底部
-  logContent.scrollTop = logContent.scrollHeight;
+  // 强制滚动到底部 - 使用 scrollIntoView 更可靠
+  logLine.scrollIntoView({ behavior: 'auto', block: 'end' });
 }
 
 // 更新取消订阅进度

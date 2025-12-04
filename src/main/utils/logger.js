@@ -441,50 +441,53 @@ const globalLogger = new Logger();
  * @returns {Object} 带标签的日志实例
  */
 function createTaggedLogger(tag) {
+  // 每个tagged logger有自己独立的Logger实例，避免taskId冲突
+  const loggerInstance = new Logger();
+  
   return {
     // 基础日志方法
-    start: (action, details = '') => globalLogger.start(action, details, tag),
-    progress: (action, details = '') => globalLogger.progress(action, details, tag),
-    success: (action, details = '') => globalLogger.success(action, details, tag),
-    error: (action, details = '') => globalLogger.error(action, details, tag),
-    warning: (action, details = '') => globalLogger.warning(action, details, tag),
-    info: (action, details = '') => globalLogger.info(action, details, tag),
-    step: (stepNumber, action, details = '') => globalLogger.step(stepNumber, action, details, tag),
+    start: (action, details = '') => loggerInstance.start(action, details, tag),
+    progress: (action, details = '') => loggerInstance.progress(action, details, tag),
+    success: (action, details = '') => loggerInstance.success(action, details, tag),
+    error: (action, details = '') => loggerInstance.error(action, details, tag),
+    warning: (action, details = '') => loggerInstance.warning(action, details, tag),
+    info: (action, details = '') => loggerInstance.info(action, details, tag),
+    step: (stepNumber, action, details = '') => loggerInstance.step(stepNumber, action, details, tag),
     
     // 专用日志方法（也使用标签，避免重复显示）
-    browser: (action, details = '') => globalLogger.browser(action, details, tag),
-    email: (action, details = '') => globalLogger.email(action, details, tag),
-    password: (action, details = '') => globalLogger.password(action, details, tag),
-    verify: (action, details = '') => globalLogger.verify(action, details, tag),
-    code: (action, details = '') => globalLogger.code(action, details, tag),
-    network: (action, details = '') => globalLogger.network(action, details, tag),
-    system: (action, details = '') => globalLogger.system(action, details, tag),
-    debug: (action, details = '') => globalLogger.debug(action, details, tag),
+    browser: (action, details = '') => loggerInstance.browser(action, details, tag),
+    email: (action, details = '') => loggerInstance.email(action, details, tag),
+    password: (action, details = '') => loggerInstance.password(action, details, tag),
+    verify: (action, details = '') => loggerInstance.verify(action, details, tag),
+    code: (action, details = '') => loggerInstance.code(action, details, tag),
+    network: (action, details = '') => loggerInstance.network(action, details, tag),
+    system: (action, details = '') => loggerInstance.system(action, details, tag),
+    debug: (action, details = '') => loggerInstance.debug(action, details, tag),
     
     // 便捷方法
-    complete: (action, details = '') => globalLogger.complete(action, details, tag),
-    setTaskId: (taskId) => globalLogger.setTaskId(taskId),
+    complete: (action, details = '') => loggerInstance.complete(action, details, tag),
+    setTaskId: (taskId) => loggerInstance.setTaskId(taskId),
     
     // 特殊格式化方法
-    codeReceived: (code) => globalLogger.success('验证码获取成功', `验证码: ${code}`, tag),
-    codeInput: (code) => globalLogger.success('验证码输入完成', `已输入: ${code}`, tag),
-    formFill: (field, value) => globalLogger.info(`填写${field}`, value, tag),
-    codeProcess: (code) => globalLogger.success('验证码', `${code} 已处理`, tag),
-    userInfo: (firstName, lastName, email, password) => globalLogger.success('账号信息', `${email} | ${password}`, tag),
+    codeReceived: (code) => loggerInstance.success('验证码获取成功', `验证码: ${code}`, tag),
+    codeInput: (code) => loggerInstance.success('验证码输入完成', `已输入: ${code}`, tag),
+    formFill: (field, value) => loggerInstance.info(`填写${field}`, value, tag),
+    codeProcess: (code) => loggerInstance.success('验证码', `${code} 已处理`, tag),
+    userInfo: (firstName, lastName, email, password) => loggerInstance.success('账号信息', `${email} | ${password}`, tag),
     
     // 按钮点击
     buttonClick: (buttonName, success = true) => {
       if (success) {
-        globalLogger.success(`${buttonName}点击成功`, '', tag);
+        loggerInstance.success(`${buttonName}点击成功`, '', tag);
       } else {
-        globalLogger.warning(`${buttonName}点击失败`, '', tag);
+        loggerInstance.warning(`${buttonName}点击失败`, '', tag);
       }
     },
     
     // 步骤完成
     stepComplete: (stepNum, action, details = '') => {
       const detailsStr = details ? ` (${details})` : '';
-      globalLogger.success(`步骤${stepNum}完成`, `${action}${detailsStr}`, tag);
+      loggerInstance.success(`步骤${stepNum}完成`, `${action}${detailsStr}`, tag);
     },
     
     // 批量摘要
@@ -493,31 +496,31 @@ function createTaggedLogger(tag) {
       const details = `总计${total}个 | 成功${success}个 | 失败${failed}个 | 成功率${successRate}%`;
       
       if (success === 0) {
-        globalLogger.warning(`${tag}完成，但没有成功的账号`, details, tag);
+        loggerInstance.warning(`${tag}完成，但没有成功的账号`, details, tag);
       } else if (successRate === 100) {
-        globalLogger.complete(`${tag}完成`, details, tag);
+        loggerInstance.complete(`${tag}完成`, details, tag);
       } else {
-        globalLogger.warning(`${tag}完成，部分成功`, details, tag);
+        loggerInstance.warning(`${tag}完成，部分成功`, details, tag);
       }
     },
     
     // 耗时统计
     duration: () => {
-      const elapsed = Date.now() - globalLogger.startTime;
+      const elapsed = Date.now() - loggerInstance.startTime;
       const seconds = Math.round(elapsed / 1000);
       return `耗时${seconds}秒`;
     },
     
     // 任务完成
     taskComplete: (success, email = '', error = '') => {
-      const elapsed = Date.now() - globalLogger.startTime;
+      const elapsed = Date.now() - loggerInstance.startTime;
       const seconds = Math.round(elapsed / 1000);
       const duration = `耗时${seconds}秒`;
       
       if (success) {
-        globalLogger.complete('注册成功', `${email} | ${duration}`, tag);
+        loggerInstance.complete('注册成功', `${email} | ${duration}`, tag);
       } else {
-        globalLogger.error('注册失败', `${error} | ${duration}`, tag);
+        loggerInstance.error('注册失败', `${error} | ${duration}`, tag);
       }
     }
   };

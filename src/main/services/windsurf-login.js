@@ -9,9 +9,11 @@ const { createTaggedLogger } = require('../utils/logger');
 
 const logger = createTaggedLogger('批量绑卡');
 
+// 睡眠函数
 function sleep(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
+
 
 /**
  * 登录 Windsurf 账号并导航到 Stripe 绑卡页面

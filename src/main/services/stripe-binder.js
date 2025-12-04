@@ -519,13 +519,14 @@ async function retryBind(page, customCardInfo = null) {
     
     try {
       // 第一步：点击 Upgrade to Pro
-      const upgradeBtn = await page.evaluateHandle(() => {
+      const upgradeBtnHandle = await page.evaluateHandle(() => {
         const elements = Array.from(document.querySelectorAll('button, a'));
-        return elements.find(el => el.textContent.includes('Upgrade to Pro'));
+        return elements.find(el => el.textContent && el.textContent.includes('Upgrade to Pro')) || null;
       });
+      const upgradeBtn = upgradeBtnHandle.asElement();
       
-      if (upgradeBtn && upgradeBtn.asElement) {
-        await upgradeBtn.asElement().click();
+      if (upgradeBtn) {
+        await upgradeBtn.click();
         await sleep(2000);
         logger.success('已点击 Upgrade to Pro');
       } else {
@@ -534,16 +535,19 @@ async function retryBind(page, customCardInfo = null) {
       
       // 第二步：点击 Start Free Trial 或 Select plan 按钮
       logger.progress('查找并点击试用按钮');
-      const trialBtn = await page.evaluateHandle(() => {
+      const trialBtnHandle = await page.evaluateHandle(() => {
         const elements = Array.from(document.querySelectorAll('button, a'));
         return elements.find(el => 
-          el.textContent.includes('Start Free Trial') ||
-          el.textContent.includes('Select plan') ||
-          el.textContent.includes('开始试用')
-        );
+          el.textContent && (
+            el.textContent.includes('Start Free Trial') ||
+            el.textContent.includes('Select plan') ||
+            el.textContent.includes('开始试用')
+          )
+        ) || null;
       });
+      const trialBtn = trialBtnHandle.asElement();
       
-      if (trialBtn && trialBtn.asElement) {
+      if (trialBtn) {
         logger.success('找到试用按钮');
         
         // 监听新页面
@@ -554,7 +558,7 @@ async function retryBind(page, customCardInfo = null) {
           });
         });
         
-        await trialBtn.asElement().click();
+        await trialBtn.click();
         
         // 等待新的 Stripe 页面
         const newPage = await Promise.race([

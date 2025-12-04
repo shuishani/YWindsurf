@@ -88,25 +88,13 @@ function addLog(message, type = 'info') {
   // 确保新消息添加到底部
   logContainer.appendChild(logEntry);
   
-  // 限制日志条数，删除最旧的
-  if (logContainer.children.length > 100) {
+  // 限制日志条数，删除最旧的（增加到500条）
+  if (logContainer.children.length > 500) {
     logContainer.removeChild(logContainer.firstChild);
   }
 
-  // 多重保障确保滚动到底部
-  const scrollToBottom = () => {
-    logContainer.scrollTop = logContainer.scrollHeight;
-  };
-  
-  // 立即滚动
-  scrollToBottom();
-  
-  // 使用 requestAnimationFrame 再次确保滚动
-  requestAnimationFrame(() => {
-    scrollToBottom();
-    // 双重保障，确保DOM完全更新后再滚动
-    setTimeout(scrollToBottom, 10);
-  });
+  // 强制滚动到底部 - 使用 scrollIntoView 更可靠
+  logEntry.scrollIntoView({ behavior: 'auto', block: 'end' });
 }
 
 /**
