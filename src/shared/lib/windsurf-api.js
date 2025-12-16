@@ -206,7 +206,8 @@ function parseGetCurrentUserResponse(buffer) {
         displayFlowUsed: credits.displayFlowUsed,
         displayFlowLimit: credits.displayFlowLimit,
         displayPromptText: credits.displayPromptText,
-        usageUnknown: credits.usageUnknown
+        usageUnknown: credits.usageUnknown,
+        planType: credits.planType  // 账号类型：Free/Trial/Pro/Teams/Enterprise
       },
       team: credits.hasTeam ? { name: null } : null,
       isPro: subscriptionType === 'PRO'
@@ -332,6 +333,23 @@ function extractCreditsInfo(decoded) {
   const displayFlowLimit = Math.floor(maxFlow / 100);
   const displayReferralCredits = Math.floor(referralCredits / 100);
   
+  // 判断账号类型 (基于 planInfoMessage[1] 字段)
+  // 已知值: 1=Teams, 2=Pro/Trial, 10=Enterprise
+  let planType = 'Free';
+  const planCode = planInfoMessage?.[1];
+  
+  if (planCode === 10) {
+    planType = 'Enterprise';  // 企业账号
+  } else if (planCode === 1 && teamMessage) {
+    planType = 'Teams';  // 团队账号
+  } else if (isTrial) {
+    planType = 'Trial';  // 试用账号 (100积分)
+  } else if (planCode === 2 || displayPromptLimit >= 500) {
+    planType = 'Pro';  // PRO账号
+  } else {
+    planType = 'Free';  // 免费账号 (25积分)
+  }
+  
   return {
     usedPrompt,
     usedFlow,
@@ -349,7 +367,8 @@ function extractCreditsInfo(decoded) {
     displayMaxTotal: displayPromptLimit + displayFlowLimit,
     displayPromptText: usageUnknown ? `—/${displayPromptLimit}` : `${displayPromptUsed}/${displayPromptLimit}`,
     usageUnknown,
-    hasTeam: teamCredits.found
+    hasTeam: teamCredits.found,
+    planType  // 账号类型：Free/Trial/Pro/Team
   };
 }
 
@@ -527,15 +546,68 @@ async function getAccountCredits(email, password) {
         monthlyFlowCredits: fullInfo.usage.displayFlowLimit || 500,
         isPro: fullInfo.isPro || false,
         accountType: fullInfo.isPro ? 'PRO' : 'Free',
+        planType: fullInfo.usage.planType || 'Free',  // 账号类型 (Free/Trial/Pro/Teams/Enterprise)
         createdAt: fullInfo.createdAt,
         expiresAt: fullInfo.expiresAt,
         usageUnknown: fullInfo.usage.usageUnknown || false,
         apiKey: fullInfo.apiKey,
         serverUrl: fullInfo.serverUrl
-      }
+      },
+      // 返回 refreshToken 供后续使用（无需密码）
+      refreshToken: loginResult.refreshToken
     };
   } catch (error) {
     logger.error('获取账号积分失败', error.message);
+    return { success: false, error: error.message };
+  }
+}
+
+/**
+ * 通过 Refresh Token 获取完整账号信息
+ * @param {string} refreshToken - Firebase Refresh Token
+ * @returns {Promise<Object>}
+ */
+async function getAccountCreditsByRefreshToken(refreshToken) {
+  try {
+    // 1. 使用 Refresh Token 获取新的 ID Token
+    const { refreshIdToken } = require('./firebase-auth');
+    const tokenResult = await refreshIdToken(refreshToken);
+    
+    if (!tokenResult.success) {
+      return { success: false, error: 'Token刷新失败: ' + tokenResult.error };
+    }
+    
+    // 2. 获取完整信息
+    const fullInfo = await getUserFullInfo(tokenResult.idToken);
+    
+    if (!fullInfo.success || !fullInfo.usage) {
+      return { success: false, error: 'API调用失败: ' + (fullInfo.error || '未知错误') };
+    }
+    
+    // 3. 返回格式化的数据
+    return {
+      success: true,
+      data: {
+        email: fullInfo.user?.email || '',
+        name: fullInfo.user?.name || fullInfo.user?.displayName || '',
+        usedPromptCredits: fullInfo.usage.displayPromptUsed || 0,
+        monthlyPromptCredits: fullInfo.usage.displayPromptLimit || 500,
+        usedFlowCredits: fullInfo.usage.displayFlowUsed || 0,
+        monthlyFlowCredits: fullInfo.usage.displayFlowLimit || 500,
+        isPro: fullInfo.isPro || false,
+        accountType: fullInfo.isPro ? 'PRO' : 'Free',
+        planType: fullInfo.usage.planType || 'Free',  // 账号类型 (Free/Trial/Pro/Teams/Enterprise)
+        createdAt: fullInfo.createdAt,
+        expiresAt: fullInfo.expiresAt,
+        usageUnknown: fullInfo.usage.usageUnknown || false,
+        apiKey: fullInfo.apiKey,
+        serverUrl: fullInfo.serverUrl
+      },
+      // 返回新的 token 供后续使用
+      newRefreshToken: tokenResult.refreshToken
+    };
+  } catch (error) {
+    logger.error('通过RefreshToken获取账号积分失败', error.message);
     return { success: false, error: error.message };
   }
 }
@@ -544,5 +616,6 @@ module.exports = {
   registerUser,        // 简单方式：只获取 API Key 和用户名
   getCurrentUser,      // 完整方式：获取积分详情
   getUserFullInfo,     // 推荐方式：获取所有信息（并行调用）
-  getAccountCredits    // 公共函数：通过邮箱密码获取积分
+  getAccountCredits,   // 公共函数：通过邮箱密码获取积分
+  getAccountCreditsByRefreshToken  // 通过 Refresh Token 获取积分
 };

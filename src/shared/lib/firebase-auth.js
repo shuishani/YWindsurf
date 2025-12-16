@@ -1,13 +1,18 @@
 /**
  * Firebase认证模块
  * 用于通过邮箱密码登录获取Firebase ID Token
+ * 使用中转服务解决国内访问问题
  */
 
 const axios = require('axios');
+const CONSTANTS = require('../config/constants');
 
-// Firebase Web API Key (从Windsurf中提取)
+// Firebase Web API Key (从 Windsurf中提取)
 // 这个key是公开的，用于客户端认证
 const FIREBASE_API_KEY = 'AIzaSyDsOl-1XpT5err0Tcnx8FFod1H8gVGIycY';
+
+// 中转服务地址
+const WORKER_URL = CONSTANTS.WORKER_URL;
 
 /**
  * 使用邮箱和密码登录Firebase
@@ -17,12 +22,13 @@ const FIREBASE_API_KEY = 'AIzaSyDsOl-1XpT5err0Tcnx8FFod1H8gVGIycY';
  */
 async function loginWithEmailPassword(email, password) {
   try {
-    // Firebase REST API: signInWithPassword
+    // 使用中转服务登录 Firebase
     const response = await axios.post(
-      `https://identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key=${FIREBASE_API_KEY}`,
+      `${WORKER_URL}/login`,
       {
         email: email,
         password: password,
+        api_key: FIREBASE_API_KEY,
         returnSecureToken: true
       },
       {
@@ -32,6 +38,22 @@ async function loginWithEmailPassword(email, password) {
         timeout: 10000
       }
     );
+    
+    // 官方 API（需要梯子）
+    // const response = await axios.post(
+    //   `https://identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key=${FIREBASE_API_KEY}`,
+    //   {
+    //     email: email,
+    //     password: password,
+    //     returnSecureToken: true
+    //   },
+    //   {
+    //     headers: {
+    //       'Content-Type': 'application/json'
+    //     },
+    //     timeout: 10000
+    //   }
+    // );
     
     return {
       success: true,
@@ -84,11 +106,12 @@ async function loginWithEmailPassword(email, password) {
  */
 async function refreshIdToken(refreshToken) {
   try {
+    // 使用中转服务刷新 Token
     const response = await axios.post(
-      `https://securetoken.googleapis.com/v1/token?key=${FIREBASE_API_KEY}`,
+      `${WORKER_URL}/refresh`,
       {
-        grant_type: 'refresh_token',
-        refresh_token: refreshToken
+        refresh_token: refreshToken,
+        api_key: FIREBASE_API_KEY
       },
       {
         headers: {
@@ -97,6 +120,21 @@ async function refreshIdToken(refreshToken) {
         timeout: 10000
       }
     );
+    
+    // 官方 API（需要梯子）
+    // const response = await axios.post(
+    //   `https://securetoken.googleapis.com/v1/token?key=${FIREBASE_API_KEY}`,
+    //   {
+    //     grant_type: 'refresh_token',
+    //     refresh_token: refreshToken
+    //   },
+    //   {
+    //     headers: {
+    //       'Content-Type': 'application/json'
+    //     },
+    //     timeout: 10000
+    //   }
+    // );
     
     return {
       success: true,

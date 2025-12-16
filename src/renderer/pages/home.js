@@ -5,6 +5,43 @@
 const { ipcRenderer } = require('electron');
 const { showToast, formatDateTime, processAccountCredits, calculateExpiry, applyDaysLeftStyle, getDaysLeftStyleString } = require('../utils/utils');
 
+// 初始化批量操作配置（从 settings.json 读取）
+async function initBatchConfig() {
+  try {
+    const result = await ipcRenderer.invoke('get-settings');
+    if (result.success && result.settings) {
+      const settings = result.settings;
+      const registerCountInput = document.getElementById('registerCount');
+      const concurrentCountInput = document.getElementById('concurrentCount');
+      const incognitoModeCheckbox = document.getElementById('incognitoMode');
+      
+      if (registerCountInput) {
+        registerCountInput.value = settings.defaultRegisterCount || 1;
+      }
+      if (concurrentCountInput) {
+        concurrentCountInput.value = settings.concurrent || 5;
+      }
+      if (incognitoModeCheckbox) {
+        incognitoModeCheckbox.checked = settings.incognitoMode !== false;
+      }
+    }
+  } catch (error) {
+    // 静默处理，使用 HTML 默认值
+  }
+}
+
+// 保存无痕模式设置
+async function saveIncognitoMode() {
+  try {
+    const result = await ipcRenderer.invoke('get-settings');
+    const settings = result.success ? result.settings : {};
+    settings.incognitoMode = document.getElementById('incognitoMode').checked;
+    await ipcRenderer.invoke('save-settings', settings);
+  } catch (error) {
+    // 静默处理
+  }
+}
+
 // 刷新系统信息
 async function refreshSystemInfo(showNotification = false) {
   try {
@@ -110,7 +147,7 @@ async function refreshSystemInfo(showNotification = false) {
       
       // 只在主动刷新时显示提示
       if (showNotification) {
-        showToast('✅ 刷新成功', 'success');
+        showToast('刷新成功', 'success');
         // 日志由后端统一管理，不在前端重复添加
       }
     } else {
@@ -133,7 +170,7 @@ async function refreshSystemInfo(showNotification = false) {
       
       // 只在主动刷新时显示提示
       if (showNotification) {
-        showToast('⚠️ 未检测到登录账号', 'error');
+        showToast('未检测到登录账号', 'error');
         logger.warning('未检测到登录账号');
       }
     }
@@ -308,7 +345,7 @@ async function startBatchRegister() {
     
     // 注册完成后刷新账号列表
     if (result && result.successCount > 0) {
-      addRegistrationLog(`✅ 批量注册完成！成功 ${result.successCount} 个，失败 ${result.failCount} 个`, 'success');
+      addRegistrationLog(`批量注册完成！成功 ${result.successCount} 个，失败 ${result.failCount} 个`, 'success');
       
       // 刷新账号列表
       const accounts = require('./accounts');
@@ -316,9 +353,15 @@ async function startBatchRegister() {
         await accounts.loadAccounts();
       }
       
-      // 如果启用了自动绑卡且有需要绑卡的账号，自动开始绑卡
+      // 如果启用了自动绑卡且有需要绑卡的账号，关闭注册日志，打开绑卡日志
       if (autoBindCard && result.savedAccounts && result.savedAccounts.length > 0) {
-        addRegistrationLog(`\n🎴 开始自动绑卡 ${result.savedAccounts.length} 个账号...`, 'info');
+        addRegistrationLog(`\n注册完成，即将开始绑卡...`, 'info');
+        
+        // 延迟一下让用户看到提示
+        await new Promise(resolve => setTimeout(resolve, 1000));
+        
+        // 关闭注册日志窗口
+        hideRegistrationLog();
         
         // 准备绑卡账号列表
         const bindAccounts = result.savedAccounts.map(acc => ({
@@ -326,41 +369,31 @@ async function startBatchRegister() {
           password: acc.password
         }));
         
-        // 设置自动绑卡标志
-        isAutoBinding = true;
+        // 显示绑卡日志窗口
+        if (typeof window.showBindingLog === 'function') {
+          window.showBindingLog();
+        }
         
-        // 调用批量绑卡，使用用户选择的虚拟卡（如果有）
+        // 调用批量绑卡
         try {
-          // 获取用户在批量绑卡区域选择的虚拟卡
           const selectedCardId = typeof window.getSelectedCardId === 'function' 
             ? window.getSelectedCardId() 
             : 'auto';
           
-          const bindResult = await ipcRenderer.invoke('batch-bind-cards', { 
+          const concurrent = parseInt(document.getElementById('concurrentCount').value) || 5;
+          await ipcRenderer.invoke('batch-api-bind-cards', { 
             accounts: bindAccounts, 
-            selectedCardId: selectedCardId 
+            selectedCardId: selectedCardId,
+            concurrent: concurrent
           });
           
-          // 不在这里显示总结，让后端的总结消息作为最终输出
-          // 后端会发送 binding-log 事件显示总结
-          
-          // 如果有待确认的账号，提示用户切换到账号管理页面
-          if (bindResult && bindResult.pendingCount > 0) {
-            addRegistrationLog(`\n💡 有 ${bindResult.pendingCount} 个账号需要手动确认，请切换到"账号管理"页面操作`, 'info');
-          }
-          
-          // 再次刷新账号列表，更新绑卡状态
+          // 刷新账号列表
           if (accounts && accounts.loadAccounts) {
             await accounts.loadAccounts();
           }
         } catch (bindError) {
-          addRegistrationLog(`❌ 自动绑卡异常: ${bindError.message}`, 'error');
-        } finally {
-          // 重置自动绑卡标志
-          isAutoBinding = false;
+          console.error('自动绑卡异常:', bindError.message);
         }
-      } else if (!autoBindCard) {
-        addRegistrationLog(`✅ ${result.successCount} 个账号已注册成功（未绑卡）`, 'success');
       }
     } else {
       addRegistrationLog(`批量注册完成，但没有成功的账号`, 'warning');
@@ -421,7 +454,7 @@ async function resetMachineId() {
   try {
     const result = await ipcRenderer.invoke('reset-machine-id');
     if (result.success) {
-      logger.successWithToast('机器码已重置（旧机器码已备份）', '✅ 机器码已重置');
+      logger.successWithToast('机器码已重置（旧机器码已备份）', '机器码已重置');
       refreshSystemInfo();
     } else {
       logger.error(`重置失败: ${result.error}`);
@@ -438,7 +471,7 @@ async function restoreMachineFile() {
   try {
     const result = await ipcRenderer.invoke('restore-machine-file');
     if (result.success) {
-      logger.successWithToast('机器码已恢复到上次重置前的状态', '✅ 机器码已恢复');
+      logger.successWithToast('机器码已恢复到上次重置前的状态', '机器码已恢复');
       refreshSystemInfo();
     } else {
       logger.error(`恢复失败: ${result.error}（请先执行一次重置操作）`);
@@ -507,10 +540,18 @@ const homeModule = {
   hideRegistrationLog,
   cancelRegistration,
   changeWindsurfPath,
-  resetWindsurfPath
+  resetWindsurfPath,
+  saveIncognitoMode
 };
 
 // 批量暴露到全局
 Object.assign(window, homeModule);
 
 module.exports = homeModule;
+
+// DOM加载完成后初始化配置
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', initBatchConfig);
+} else {
+  initBatchConfig();
+}

@@ -103,27 +103,54 @@ function addLog(message, type = 'info') {
  * @param {number} totalCredits - 总积分限额
  * @returns {Object} 包含账号类型、积分信息、颜色等的完整对象
  */
-function processAccountCredits(usedCredits, totalCredits, usageUnknown = false) {
-  const used = usedCredits || 0;
+function processAccountCredits(usedCredits, totalCredits, usageUnknown = false, planType = null) {
+  const rawUsed = usedCredits || 0;
   const total = totalCredits || 0;
   
-  // 1. 账号类型判断
+  // 积分显示逻辑：每450为一个周期，超过后减去450的倍数
+  // 例如：450→450, 500→50, 900→0, 901→1, 1100→200
+  const cycles = Math.floor(rawUsed / 450);
+  const used = cycles > 0 ? rawUsed - cycles * 450 : rawUsed;
+  
+  // 1. 账号类型判断 - 先根据积分判断，再用 planType 覆盖
   let accountType = 'Free';
   let typeClass = 'badge-type-free';
   let isPro = false;
   
+  // 先根据积分判断基础类型（回退逻辑，没有 planType 时使用）
+  // 注意：无法准确区分 Teams 和 Enterprise，统一显示 Pro
   if (total >= 500) {
-    accountType = 'PRO';
+    accountType = 'Pro';
     typeClass = 'badge-type-pro';
     isPro = true;
   } else if (total === 100) {
     accountType = 'Trial';
     typeClass = 'badge-type-trial';
     isPro = true;
-  } else if (total === 25) {
+  } else {
     accountType = 'Free';
     typeClass = 'badge-type-free';
     isPro = false;
+  }
+  
+  // 如果有 planType，用它覆盖（更准确）
+  if (planType && planType !== 'Free') {
+    accountType = planType;
+    isPro = ['Pro', 'Trial', 'Teams', 'Enterprise'].includes(planType);
+    switch (planType) {
+      case 'Enterprise':
+        typeClass = 'badge-type-enterprise';
+        break;
+      case 'Teams':
+        typeClass = 'badge-type-teams';
+        break;
+      case 'Pro':
+        typeClass = 'badge-type-pro';
+        break;
+      case 'Trial':
+        typeClass = 'badge-type-trial';
+        break;
+    }
   }
   
   // 2. 积分计算
@@ -336,7 +363,57 @@ function getDaysLeftStyleString(days) {
   return `background: ${style.background}; color: ${style.color}; border: ${style.border};`;
 }
 
-module.exports = { 
+/**
+ * 创建通用模态框
+ * @param {string} className - 模态框类名
+ * @param {string} dialogHTML - 对话框内容HTML
+ * @param {Object} options - 配置选项
+ * @returns {HTMLElement} 模态框元素
+ */
+function createModal(className, dialogHTML, options = {}) {
+  const { maxWidth = '400px', closeOnBackdrop = true } = options;
+  
+  const modal = document.createElement('div');
+  modal.className = className;
+  modal.style.cssText = `
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0,0,0,0.5);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    z-index: 10000;
+  `;
+
+  const dialog = document.createElement('div');
+  dialog.style.cssText = `
+    background: white;
+    border-radius: 12px;
+    padding: 24px;
+    max-width: ${maxWidth};
+    width: 90%;
+    box-shadow: 0 10px 30px rgba(0,0,0,0.3);
+  `;
+  dialog.innerHTML = dialogHTML;
+
+  modal.appendChild(dialog);
+  document.body.appendChild(modal);
+
+  if (closeOnBackdrop) {
+    modal.addEventListener('click', (e) => {
+      if (e.target === modal) {
+        modal.remove();
+      }
+    });
+  }
+
+  return modal;
+}
+
+const utilsModule = { 
   addLog, 
   showToast, 
   calculateExpiry, 
@@ -346,21 +423,9 @@ module.exports = {
   generateEmptyStateHTML,
   applyDaysLeftStyle,
   getDaysLeftStyleString,
-  logger
-};
-
-// 导出到全局
-const utilsModule = {
-  showToast,
-  calculateExpiry,
-  addLog,
-  processAccountCredits,
-  formatDateTime,
-  handleError,
-  generateEmptyStateHTML,
-  applyDaysLeftStyle,
-  getDaysLeftStyleString,
+  createModal,
   logger
 };
 
 Object.assign(window, utilsModule);
+module.exports = utilsModule;

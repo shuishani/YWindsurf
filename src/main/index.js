@@ -71,7 +71,8 @@ function createWindow() {
       devTools: true,
       webviewTag: true
     },
-    title: 'Windsurf-Tool',
+    title: 'YWindsurf 3.0',
+    icon: path.join(__dirname, '../../build/icon.ico'),
     show: false // 先不显示，等加载完成
   });
 

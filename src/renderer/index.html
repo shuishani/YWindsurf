@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; frame-src https:; img-src 'self' data: https:; connect-src 'self' https:; font-src 'self' https:;">
-  <title>YWindsurf 2.1</title>
+  <title>YWindsurf 3.0</title>
   <!-- 样式文件 -->
   <link rel="stylesheet" href="../styles/common.css">
   <link rel="stylesheet" href="../styles/main.css">
@@ -12,6 +12,7 @@
   <link rel="stylesheet" href="../styles/accounts.css">
   <link rel="stylesheet" href="../styles/settings.css">
   <script src="../shared/lib/i18n.js"></script>
+  <script src="utils/icons.js"></script>
 </head>
 <body>
   <div class="container">
@@ -23,23 +24,23 @@
       
       <div class="sidebar-nav">
         <div class="nav-item" onclick="switchTab('home', event)">
-          <span class="nav-icon">🏠</span>
+          <span class="nav-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path><polyline points="9 22 9 12 15 12 15 22"></polyline></svg></span>
           <span>首页</span>
         </div>
         <div class="nav-item" onclick="switchTab('register', event)">
-          <span class="nav-icon">👥</span>
+          <span class="nav-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M23 21v-2a4 4 0 0 0-3-3.87"></path><path d="M16 3.13a4 4 0 0 1 0 7.75"></path></svg></span>
           <span>账号管理</span>
         </div>
         <div class="nav-item" onclick="switchTab('switch', event)">
-          <span class="nav-icon">💳</span>
+          <span class="nav-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="1" y="4" width="22" height="16" rx="2" ry="2"></rect><line x1="1" y1="10" x2="23" y2="10"></line></svg></span>
           <span>虚拟卡管理</span>
         </div>
         <div class="nav-item" data-tab="settings" onclick="switchTab('settings', event)">
-          <span class="nav-icon">⚙️</span>
+          <span class="nav-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg></span>
           <span class="nav-label">系统设置</span>
         </div>
         <div class="nav-item" onclick="switchTab('logs', event)">
-          <span class="nav-icon">📝</span>
+          <span class="nav-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line></svg></span>
           <span>系统日志</span>
         </div>
       </div>
@@ -61,8 +62,8 @@
               <div style="display: flex; align-items: center; gap: 8px;">
                 <strong>安装路径：</strong>
                 <span id="windsurfPath" style="color: #6e6e73; flex: 1;">检测中...</span>
-                <button class="modern-btn btn-secondary" onclick="changeWindsurfPath()">📁 手动选择</button>
-                <button class="modern-btn btn-secondary" onclick="resetWindsurfPath()">↩️ 重置</button>
+                <button class="modern-btn btn-secondary" onclick="changeWindsurfPath()">手动选择</button>
+                <button class="modern-btn btn-secondary" onclick="resetWindsurfPath()">重置</button>
               </div>
               <div><strong>扩展版本：</strong><span id="extensionVersion" style="color: #6e6e73;">-</span> <strong style="margin-left: 20px;">软件版本：</strong><span id="softwareVersion" style="color: #6e6e73;">-</span></div>
               <div><strong>机器码：</strong><span id="machineId" style="color: #6e6e73; font-family: monospace; word-break: break-all;">-</span></div>
@@ -73,7 +74,7 @@
           <div style="background: #f5f5f7; border-radius: 12px; padding: 24px; margin-bottom: 20px; border: 1px solid #e5e5ea;">
             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
               <h2 style="font-size: 18px; font-weight: 600; margin: 0; color: #1d1d1f;">本地账号信息</h2>
-              <button class="modern-btn btn-secondary" onclick="refreshSystemInfo(true)">🔄 刷新数据</button>
+              <button class="modern-btn btn-secondary" onclick="refreshSystemInfo(true)">刷新数据</button>
             </div>
             <div id="currentAccountInfo" style="font-size: 13px; line-height: 1.8; color: #1d1d1f;">
               <div style="margin-bottom: 8px;">
@@ -116,8 +117,8 @@
 
           <!-- 操作按钮 -->
           <div style="display: flex; gap: 12px; margin-bottom: 20px;">
-            <button class="modern-btn btn-secondary" onclick="resetMachineId()">🔧 重置机器码</button>
-            <button class="modern-btn btn-secondary" onclick="restoreMachineFile()">📁 恢复机器码</button>
+            <button class="modern-btn btn-secondary" onclick="resetMachineId()">重置机器码</button>
+            <button class="modern-btn btn-secondary" onclick="restoreMachineFile()">恢复机器码</button>
           </div>
         </div>
       </div>
@@ -155,90 +156,105 @@
       <div class="action-panel">
         <div class="panel-header">
           <div class="panel-title">
-            <span>🔧 批量操作</span>
+            <span>批量操作</span>
             <span class="panel-subtitle">注册新账号或为现有账号绑卡</span>
           </div>
         </div>
         
-        <!-- 批量注册行 -->
-        <div class="batch-operation-row">
-          <div class="operation-label">⚡ 批量注册</div>
-          <div class="operation-controls">
+        <!-- 批量操作通用配置 -->
+        <div class="batch-operation-row general-config">
+          <div class="operation-label">通用配置</div>
+          <div class="operation-col col-1">
             <div class="compact-control-group">
               <label>数量</label>
               <input type="number" id="registerCount" value="1" min="1" max="50" class="compact-input">
             </div>
+          </div>
+          <div class="operation-col col-2">
             <div class="compact-control-group">
               <label>并发</label>
               <input type="number" id="concurrentCount" value="5" min="1" max="10" class="compact-input">
             </div>
+          </div>
+          <div class="operation-col col-3">
+            <label class="compact-checkbox" title="无痕模式可避免浏览器缓存干扰">
+              <input type="checkbox" id="incognitoMode" checked onchange="saveIncognitoMode()">
+              无痕模式
+            </label>
+          </div>
+        </div>
+
+        <!-- 批量注册行 -->
+        <div class="batch-operation-row">
+          <div class="operation-label">批量注册</div>
+          <div class="operation-col col-1">
+            <button class="compact-btn btn-primary" onclick="startBatchRegister()">开始注册</button>
+          </div>
+          <div class="operation-col col-2">
             <label class="compact-checkbox">
               <input type="checkbox" id="autoBindCard" checked>
-              <span>自动绑卡</span>
+              自动绑卡
             </label>
-            <button class="compact-btn btn-primary" onclick="startBatchRegister()">
-              开始注册
-            </button>
           </div>
+          <div class="operation-col col-3"></div>
         </div>
         
         <!-- 批量绑卡行 -->
         <div class="batch-operation-row">
-          <div class="operation-label">💳 批量绑卡</div>
-          <div class="operation-controls">
-            <div class="compact-control-group">
-              <div class="card-selector-wrapper" style="position: relative;">
-                <button class="compact-btn btn-secondary" onclick="toggleCardSelector()" id="selectedCardButton">
-                  选择虚拟卡 ▾
-                </button>
-                <div id="cardSelectorDropdown" class="card-selector-dropdown" style="display: none;">
-                  <!-- 动态加载的卡片选项 -->
-                </div>
-              </div>
+          <div class="operation-label">批量绑卡</div>
+          <div class="operation-col col-1">
+            <button class="compact-btn btn-success" onclick="startApiBatchBinding()">开始绑卡</button>
+          </div>
+          <div class="operation-col col-2">
+            <div class="card-selector-wrapper">
+              <button class="compact-btn btn-secondary" onclick="toggleCardSelector()" id="selectedCardButton">选择虚拟卡 ▾</button>
+              <div id="cardSelectorDropdown" class="card-selector-dropdown" style="display: none;"></div>
             </div>
-            <button class="compact-btn btn-success" onclick="startBatchBinding()">
-              开始绑卡
-            </button>
-            <button class="compact-btn btn-secondary" onclick="startBatchCancel()">
-              取消订阅
-            </button>
+          </div>
+          <div class="operation-col col-3">
+            <button class="compact-btn btn-secondary" onclick="startBatchCancel()">取消订阅</button>
           </div>
         </div>
         
         <!-- 进度和状态显示 -->
-        <div id="registerProgress" style="display:none; margin-top:12px;">
-          <div style="margin-bottom:8px; font-size:12px; color:#86868b; text-align:center;" id="progressText">0%</div>
+        <div id="registerProgress" class="progress-container" style="display:none;">
+          <div class="progress-text" id="progressText">0%</div>
           <div class="progress-bar">
             <div class="progress-fill" id="progressFill"></div>
           </div>
-          <div id="registerStatus"></div>
+          <div id="registerStatus" class="status-text"></div>
         </div>
-        <div id="switchStatus" style="margin-top:12px;"></div>
       </div>
 
-      
       <div class="table-container">
         <!-- 表格工具栏 -->
         <div class="table-toolbar" style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px; padding:0 4px;">
           <div style="display:flex; align-items:center; gap:16px;">
             <div style="font-size:15px; font-weight:600; color:#1d1d1f;">账号列表</div>
             <span id="selectedBindCount" style="font-size:13px; color:#86868b;">已选择 0 个账号</span>
+            <!-- 搜索框 -->
+            <div style="position:relative;">
+              <input type="text" id="accountSearchInput" placeholder="搜索邮箱..." 
+                style="height:32px; width:180px; padding:0 12px 0 32px; border:1px solid #d2d2d7; border-radius:6px; font-size:13px; outline:none;"
+                oninput="filterAccountsByEmail(this.value)">
+              <span style="position:absolute; left:10px; top:50%; transform:translateY(-50%); color:#86868b; font-size:14px;"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg></span>
+            </div>
           </div>
           <div style="display:flex; gap:10px;">
             <!-- 快速筛选下拉菜单 -->
             <div class="dropdown" style="position:relative;">
               <button class="modern-btn btn-secondary" onclick="toggleQuickFilterMenu()">
-                ⚡ 快速筛选 ▾
+                快速筛选 ▾
               </button>
               <div id="quickFilterMenu" style="display:none; position:absolute; top:100%; right:0; margin-top:4px; background:white; border:1px solid #e5e5ea; border-radius:10px; box-shadow:0 4px 12px rgba(0,0,0,0.1); min-width:160px; z-index:1000; overflow:hidden;">
-                <div onclick="selectUnboundAccounts(); toggleQuickFilterMenu();" style="padding:10px 16px; cursor:pointer; font-size:13px; border-bottom:1px solid #f5f5f7; transition: background 0.15s;">✅ 未绑卡账号</div>
-                <div onclick="selectAccountsForCleanup(); toggleQuickFilterMenu();" style="padding:10px 16px; cursor:pointer; font-size:13px; border-bottom:1px solid #f5f5f7; transition: background 0.15s;">🗑️ 可清理账号</div>
-                <div onclick="invertSelection(); toggleQuickFilterMenu();" style="padding:10px 16px; cursor:pointer; font-size:13px; transition: background 0.15s;">🔄 反选</div>
+                <div onclick="selectUnboundAccounts(); toggleQuickFilterMenu();" style="padding:10px 16px; cursor:pointer; font-size:13px; border-bottom:1px solid #f5f5f7; transition: background 0.15s;">未绑卡账号</div>
+                <div onclick="selectAccountsForCleanup(); toggleQuickFilterMenu();" style="padding:10px 16px; cursor:pointer; font-size:13px; border-bottom:1px solid #f5f5f7; transition: background 0.15s;">可清理账号</div>
+                <div onclick="invertSelection(); toggleQuickFilterMenu();" style="padding:10px 16px; cursor:pointer; font-size:13px; transition: background 0.15s;">反选</div>
               </div>
             </div>
             <!-- 刷新选中按钮 -->
             <button class="modern-btn btn-secondary" onclick="refreshSelectedAccounts()" title="刷新选中账号的积分数据">
-              🔄 刷新选中
+              刷新选中
             </button>
             
             <!-- 更多操作下拉菜单 -->
@@ -247,19 +263,21 @@
                 更多 ▾
               </button>
               <div id="moreActionsMenu" style="display:none; position:absolute; top:100%; right:0; margin-top:4px; background:white; border:1px solid #e5e5ea; border-radius:10px; box-shadow:0 4px 12px rgba(0,0,0,0.1); min-width:150px; z-index:1000; overflow:hidden;">
-                <div onclick="exportSelectedAccounts(); toggleMoreActionsMenu();" style="padding:10px 16px; cursor:pointer; font-size:13px; border-bottom:1px solid #f5f5f7; transition: background 0.15s;">📤 导出选中</div>
-                <div onclick="deleteSelectedAccounts(); toggleMoreActionsMenu();" style="padding:10px 16px; cursor:pointer; font-size:13px; color:#ff3b30; transition: background 0.15s;">🗑️ 删除选中</div>
+                <div onclick="getPaymentLinkForSelected(); toggleMoreActionsMenu();" style="padding:10px 16px; cursor:pointer; font-size:13px; border-bottom:1px solid #f5f5f7; transition: background 0.15s;">查看绑卡链接</div>
+                <div onclick="exportSelectedAccounts(); toggleMoreActionsMenu();" style="padding:10px 16px; cursor:pointer; font-size:13px; border-bottom:1px solid #f5f5f7; transition: background 0.15s;">导出选中</div>
+                <div onclick="deleteSelectedAccounts(); toggleMoreActionsMenu();" style="padding:10px 16px; cursor:pointer; font-size:13px; color:#ff3b30; transition: background 0.15s;">删除选中</div>
               </div>
             </div>
             
             <!-- 添加账号下拉菜单 -->
             <div class="dropdown" style="position:relative;">
               <button class="modern-btn btn-secondary" onclick="toggleAddAccountMenu()">
-                ➕ 添加账号 ▾
+                添加账号 ▾
               </button>
               <div id="addAccountMenu" style="display:none; position:absolute; top:100%; right:0; margin-top:4px; background:white; border:1px solid #e5e5ea; border-radius:10px; box-shadow:0 4px 12px rgba(0,0,0,0.1); min-width:150px; z-index:1000; overflow:hidden;">
-                <div onclick="showAddAccountForm(); toggleAddAccountMenu();" style="padding:10px 16px; cursor:pointer; font-size:13px; border-bottom:1px solid #f5f5f7; transition: background 0.15s;">📝 输入账号密码</div>
-                <div onclick="showImportAccountForm(); toggleAddAccountMenu();" style="padding:10px 16px; cursor:pointer; font-size:13px; transition: background 0.15s;">📂 批量导入账号</div>
+                <div onclick="showAddAccountForm(); toggleAddAccountMenu();" style="padding:10px 16px; cursor:pointer; font-size:13px; border-bottom:1px solid #f5f5f7; transition: background 0.15s;">输入账号密码</div>
+                <div onclick="showImportByTokenForm(); toggleAddAccountMenu();" style="padding:10px 16px; cursor:pointer; font-size:13px; border-bottom:1px solid #f5f5f7; transition: background 0.15s;">Token导入账号</div>
+                <div onclick="showImportAccountForm(); toggleAddAccountMenu();" style="padding:10px 16px; cursor:pointer; font-size:13px; transition: background 0.15s;">批量导入账号</div>
               </div>
             </div>
           </div>
@@ -299,25 +317,25 @@
           <div class="table-container" style="margin-bottom: 16px; padding-bottom: 0;">
             <div class="table-toolbar" style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px; padding:0 4px;">
               <div style="display:flex; align-items:center; gap:12px;">
-                <div style="font-size:15px; font-weight:600; color:#1d1d1f;">🎲 BIN卡头列表</div>
+                <div style="font-size:15px; font-weight:600; color:#1d1d1f;">BIN卡头列表</div>
                 <span id="binSelectedCount" style="font-size:13px; color:#007aff; display:none;">已选择 0 个</span>
               </div>
               <div style="display:flex; gap:8px;">
                 <!-- 添加按钮（下拉菜单） -->
                 <div style="position:relative;">
-                  <button class="modern-btn btn-secondary" onclick="toggleBinAddMenu()">➕ 添加 ▾</button>
+                  <button class="modern-btn btn-secondary" onclick="toggleBinAddMenu()">添加 ▾</button>
                   <div id="binAddMenu" class="action-menu" style="display:none; right:0; left:auto; min-width:120px;">
-                    <div class="action-menu-item" onclick="showBinForm()">✏️ 手动添加</div>
-                    <div class="action-menu-item" onclick="showImportBinsForm()">📂 批量导入</div>
+                    <div class="action-menu-item" onclick="showBinForm()">手动添加</div>
+                    <div class="action-menu-item" onclick="showImportBinsForm()">批量导入</div>
                   </div>
                 </div>
                 <!-- 更多操作（下拉菜单） -->
                 <div style="position:relative;">
                   <button class="modern-btn btn-secondary" onclick="toggleBinMoreMenu()">更多操作 ▾</button>
                   <div id="binMoreMenu" class="action-menu" style="display:none; right:0; left:auto; min-width:140px;">
-                    <div class="action-menu-item" onclick="invertBinSelection()">🔄 反选</div>
-                    <div class="action-menu-item" onclick="exportSelectedBins()">📤 导出选中</div>
-                    <div class="action-menu-item danger" onclick="deleteSelectedBins()">🗑️ 删除选中</div>
+                    <div class="action-menu-item" onclick="invertBinSelection()">反选</div>
+                    <div class="action-menu-item" onclick="exportSelectedBins()">导出选中</div>
+                    <div class="action-menu-item danger" onclick="deleteSelectedBins()">删除选中</div>
                   </div>
                 </div>
               </div>
@@ -337,30 +355,29 @@
               </tbody>
             </table>
           </div>
-
           <!-- 完整卡管理区 -->
           <div class="table-container">
             <div class="table-toolbar" style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px; padding:0 4px;">
               <div style="display:flex; align-items:center; gap:12px;">
-                <div style="font-size:15px; font-weight:600; color:#1d1d1f;">🎴 完整卡列表</div>
+                <div style="font-size:15px; font-weight:600; color:#1d1d1f;">完整卡列表</div>
                 <span id="cardSelectedCount" style="font-size:13px; color:#007aff; display:none;">已选择 0 个</span>
               </div>
               <div style="display:flex; gap:8px;">
                 <!-- 添加按钮（下拉菜单） -->
                 <div style="position:relative;">
-                  <button class="modern-btn btn-secondary" onclick="toggleCardAddMenu()">➕ 添加 ▾</button>
+                  <button class="modern-btn btn-secondary" onclick="toggleCardAddMenu()">添加 ▾</button>
                   <div id="cardAddMenu" class="action-menu" style="display:none; right:0; left:auto; min-width:120px;">
-                    <div class="action-menu-item" onclick="showCardForm()">✏️ 手动添加</div>
-                    <div class="action-menu-item" onclick="showImportCardsForm()">📂 批量导入</div>
+                    <div class="action-menu-item" onclick="showCardForm()">手动添加</div>
+                    <div class="action-menu-item" onclick="showImportCardsForm()">批量导入</div>
                   </div>
                 </div>
                 <!-- 更多操作（下拉菜单） -->
                 <div style="position:relative;">
                   <button class="modern-btn btn-secondary" onclick="toggleCardMoreMenu()">更多操作 ▾</button>
                   <div id="cardMoreMenu" class="action-menu" style="display:none; right:0; left:auto; min-width:140px;">
-                    <div class="action-menu-item" onclick="invertCardSelection()">🔄 反选</div>
-                    <div class="action-menu-item" onclick="exportSelectedCards()">📤 导出选中</div>
-                    <div class="action-menu-item danger" onclick="deleteSelectedCards()">🗑️ 删除选中</div>
+                    <div class="action-menu-item" onclick="invertCardSelection()">反选</div>
+                    <div class="action-menu-item" onclick="exportSelectedCards()">导出选中</div>
+                    <div class="action-menu-item danger" onclick="deleteSelectedCards()">删除选中</div>
                   </div>
                 </div>
               </div>
@@ -389,7 +406,7 @@
       <!-- 系统日志 -->
       <div id="logs" class="tab-content">
         <div class="content-header">
-          <div class="content-title">📝 系统日志</div>
+          <div class="content-title">系统日志</div>
           <div class="content-description">查看系统运行日志和操作记录</div>
         </div>
         <div class="content-body">
@@ -518,12 +535,34 @@
       </div>
     </div>
   </div>
+  <!-- Token导入账号弹窗 -->
+  <div id="importByTokenModal" class="modal-overlay">
+    <div class="modal-dialog" style="max-width:500px;">
+      <div class="modal-header">Token导入账号</div>
+      <div class="status-message status-info" style="margin: 0 0 16px 0; padding: 10px 12px; font-size: 12px;">
+        <strong>说明：</strong><br>
+        • 粘贴 Firebase Refresh Token 即可导入账号<br>
+        • 无需密码，自动获取账号信息和积分数据<br>
+        • 支持批量导入，每行一个 Token
+      </div>
+      <div class="form-group" style="margin-bottom:0;">
+        <label>Refresh Token（每行一个）</label>
+        <textarea id="importTokenInput" style="min-height: 150px; font-family: monospace; font-size: 12px; resize: vertical;" placeholder="粘贴 Refresh Token..."></textarea>
+      </div>
+      <div id="importTokenResult" style="margin-top: 12px;"></div>
+      <div class="modal-footer">
+        <button class="btn" onclick="hideImportByTokenForm()">取消</button>
+        <button class="btn btn-success" onclick="importAccountsByToken()">导入</button>
+      </div>
+    </div>
+  </div>
+
   <!-- 导入账号弹窗 -->
   <div id="importAccountModal" class="modal-overlay">
     <div class="modal-dialog">
       <div class="modal-header" data-i18n="importAccountsTitle">导入账号</div>
       <div class="status-message status-info" style="margin: 0 0 16px 0; padding: 10px 12px; font-size: 12px;">
-        <strong>📋 格式说明：</strong><br>
+        <strong>格式说明：</strong><br>
         • 仅支持 JSON 数组格式<br>
         • 格式：<code>[{"email": "邮箱", "password": "密码"}]</code><br>
         • 示例：<code>[{"email": "123@qq.com", "password": "abc123"}]</code>
@@ -595,9 +634,9 @@
   <!-- 导入虚拟卡模态框 -->
   <div id="importCardsModal" class="modal-overlay">
     <div class="modal-dialog" style="max-width:500px;">
-      <div class="modal-header">📂 导入虚拟卡</div>
+      <div class="modal-header">导入虚拟卡</div>
       <div class="status-message status-info" style="margin:0 0 16px 0; padding:12px; font-size:12px; line-height:1.6;">
-        <strong>📋 格式说明：</strong><br>
+        <strong>格式说明：</strong><br>
         • 每行一张卡：<code>卡号 过期日期(MMYY) CVV [绑定次数]</code><br>
         • 示例：<code>5447685740496193 1027 842</code> 或 <code>5447685740496193 1027 842 2</code><br>
         • 绑定次数为可选参数，不填默认为0次
@@ -645,9 +684,9 @@
   <!-- 导入BIN卡头模态框 -->
   <div id="importBinsModal" class="modal-overlay">
     <div class="modal-dialog" style="max-width:500px;">
-      <div class="modal-header">📂 导入BIN卡头</div>
+      <div class="modal-header">导入BIN卡头</div>
       <div class="status-message status-info" style="margin:0 0 16px 0; padding:12px; font-size:12px; line-height:1.6;">
-        <strong>📋 格式说明：</strong><br>
+        <strong>格式说明：</strong><br>
         • 每行一个BIN：<code>BIN卡头 备注(可选)</code><br>
         • 示例：<code>538841xxxxxxxxxx 测试用途</code>
       </div>
@@ -671,7 +710,7 @@
   <div id="registrationLogModal" class="modal-overlay" style="display:none;">
     <div class="modal-dialog" style="max-width:800px; max-height:80vh; display:flex; flex-direction:column;">
       <div class="modal-header" style="display:flex; justify-content:center; align-items:center;">
-        <span>📝 批量注册进度</span>
+        <span>批量注册进度</span>
       </div>
       
       <!-- 进度条 -->
@@ -725,19 +764,15 @@
         </div>
       </div>
       
-      <div class="modal-footer" style="display:flex; gap:12px; justify-content:space-between; align-items:center;">
-        <div style="display:flex; gap:8px; align-items:center;">
-          <button onclick="confirmCurrentBindSuccess()" style="background:#34c759; color:white; border:none; padding:8px 16px; border-radius:6px; cursor:pointer; font-size:13px; font-weight:600;">✅ 绑卡成功</button>
-          <div class="card-selector-wrapper" style="position: relative;">
-            <button class="compact-btn btn-secondary" onclick="toggleRetryCardSelector()" id="retryCardButton" style="padding:8px 12px; font-size:13px;">
-              选择虚拟卡 ▾
-            </button>
-            <div id="retryCardSelectorDropdown" class="card-selector-dropdown" style="display: none; bottom: 100%; top: auto; margin-bottom: 4px;">
-              <!-- 动态加载的卡片选项 -->
-            </div>
-          </div>
-          <button onclick="retryCurrentBinding()" style="background:#007aff; color:white; border:none; padding:8px 16px; border-radius:6px; cursor:pointer; font-size:13px; font-weight:600;">🔄 重新绑卡</button>
+      <!-- 待确认账号列表 -->
+      <div id="pendingAccountsSection" style="padding:0 20px 16px 20px; display:none;">
+        <div style="font-size:13px; color:#1d1d1f; font-weight:600; margin-bottom:8px;">待确认账号 (<span id="pendingAccountsCount">0</span>)</div>
+        <div id="pendingAccountsList" style="background:#f8f9fa; border:1px solid #e5e5ea; border-radius:6px;">
+          <!-- 动态渲染待确认账号 -->
         </div>
+      </div>
+      
+      <div class="modal-footer" style="display:flex; gap:12px; justify-content:flex-end; align-items:center;">
         <button class="btn btn-primary" onclick="hideBindingLog()">关闭</button>
       </div>
     </div>

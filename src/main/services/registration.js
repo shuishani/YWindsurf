@@ -1,5 +1,6 @@
 const { connect } = require('puppeteer-real-browser');
 const { createTaggedLogger } = require('../utils/logger');
+const path = require('path');
 
 class RegistrationBot {
   constructor(config) {
@@ -224,19 +225,26 @@ class RegistrationBot {
       this.logger.start('启动浏览器');
       
       // 使用 puppeteer-real-browser，自动绕过 Cloudflare
+      const windsurfPaths = require('../../shared/config/windsurf-paths');
+      const fs = require('fs');
+      const settingsPath = path.join(windsurfPaths.getJsonDataDir(), 'settings.json');
+      let settings = {};
+      try { settings = JSON.parse(fs.readFileSync(settingsPath, 'utf-8')); } catch {}
+      const browserArgs = ['--disable-blink-features=AutomationControlled', '--window-size=800,1000'];
+      if (settings.incognitoMode !== false) browserArgs.push('--incognito');
       const response = await connect({
         headless: false,
         fingerprint: true,  // 启用指纹伪装
         turnstile: true,    // 自动处理 Cloudflare Turnstile
         tf: true,
-        args: ['--disable-blink-features=AutomationControlled']
+        args: browserArgs
       });
       
       browser = response.browser;
       page = response.page;
       
-      // 设置浏览器窗口大小为 800x900
-      await page.setViewport({ width: 800, height: 900 });
+      // 设置浏览器窗口大小为 800x1000（与绑卡一致）
+      await page.setViewport({ width: 800, height: 1000 });
       
       this.logger.userInfo(firstName, lastName, email, password);
 
@@ -262,7 +270,6 @@ class RegistrationBot {
           });
           
           if (acceptButton.asElement()) {
-            this.logger.browser('点击接受邀请按钮');
             await acceptButton.asElement().click();
             await page.waitForNavigation({ waitUntil: 'networkidle2', timeout: 15000 });
           } else {
@@ -429,7 +436,6 @@ class RegistrationBot {
       this.logger.info('延迟15秒获取验证码');
       await this.sleep(15000);
       
-      this.logger.code('正在获取邮箱验证码');
       const verificationCode = await this.getVerificationCode(email);
       
       // 输入验证码
@@ -446,7 +452,6 @@ class RegistrationBot {
         await codeInputs[0].type(verificationCode, { delay: 50 });
       }
       
-      this.logger.codeProcess(verificationCode);
       await this.sleep(1000);
       
       // 点击验证按钮

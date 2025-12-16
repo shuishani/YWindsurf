@@ -118,8 +118,21 @@ const CARD_BIN = '538841xxxxxxxxxx';  // 559888 是固定BIN（前6位），后1
  * @param {Object} customCardInfo - 可选的自定义卡信息 {cardNumber, expiry, cvv}
  * @returns {Promise<{success: boolean, error?: string, pending?: boolean}>}
  */
-async function bindCard(page, logCallback = null, customCardInfo = null) {
-  // 使用全局logger实例（logCallback参数保留以兼容旧代码，但不再使用）
+async function bindCard(page, logCallback = null, customCardInfo = null, taskIndex = null) {
+  // taskIndex: 任务编号，用于批量绑卡时区分不同任务的日志
+  const taskPrefix = taskIndex ? `[任务${taskIndex}] ` : '';
+  
+  // 创建带任务前缀的日志函数
+  const taskLogger = {
+    browser: (msg, detail) => logger.browser(`${taskPrefix}${msg}`, detail),
+    info: (msg, detail) => logger.info(`${taskPrefix}${msg}`, detail),
+    warning: (msg, detail) => logger.warning(`${taskPrefix}${msg}`, detail),
+    error: (msg, detail) => logger.error(`${taskPrefix}${msg}`, detail),
+    success: (msg, detail) => logger.success(`${taskPrefix}${msg}`, detail),
+    step: (num, msg) => logger.step(num, `${taskPrefix}${msg}`),
+    progress: (msg, detail) => logger.progress(`${taskPrefix}${msg}`, detail),
+    start: (msg) => logger.start(`${taskPrefix}${msg}`)
+  };
   
   try {
     // 检测是否在绑卡页面（支持 Stripe 独立页面和 Windsurf 内嵌页面）
@@ -132,30 +145,30 @@ async function bindCard(page, logCallback = null, customCardInfo = null) {
       throw new Error('当前不在绑卡页面');
     }
     
-    logger.browser('检测到绑卡页面');
+    taskLogger.browser('检测到绑卡页面');
     
     // 使用传入的卡信息或生成新的
     let cardInfo;
     if (customCardInfo) {
       cardInfo = customCardInfo;
-      logger.info('使用指定的卡信息');
+      taskLogger.info('使用指定的卡信息');
     } else {
       // 使用默认BIN生成（后备方案）
-      logger.warning('未传入卡信息，使用默认BIN生成', '建议在虚拟卡管理中添加卡片');
+      taskLogger.warning('未传入卡信息，使用默认BIN生成', '建议在虚拟卡管理中添加卡片');
       cardInfo = {
         cardNumber: generateCardNumber(CARD_BIN),
         expiry: generateExpiry(),
         cvv: generateCVV()
       };
-      logger.info('使用默认BIN生成卡信息');
+      taskLogger.info('使用默认BIN生成卡信息');
     }
     
     const addressInfo = generateUSAddress();
     
-    logger.info('卡信息准备完成', `${cardInfo.cardNumber} | ${cardInfo.expiry} | ${cardInfo.cvv}`);
+    taskLogger.info('卡信息准备完成', `${cardInfo.cardNumber} | ${cardInfo.expiry} | ${cardInfo.cvv}`);
     
     // 执行绑卡
-    return await fillAndSubmitCard(page, cardInfo, addressInfo, logger);
+    return await fillAndSubmitCard(page, cardInfo, addressInfo, taskLogger);
     
   } catch (error) {
     // 友好的错误提示
@@ -164,14 +177,16 @@ async function bindCard(page, logCallback = null, customCardInfo = null) {
     if (error.message.includes('Timeout')) {
       friendlyMessage = '操作超时，可能是网络问题或页面加载缓慢';
     } else if (error.message.includes('has been closed')) {
-      friendlyMessage = '浏览器窗口被关闭，请不要手动关闭浏览器';
+      friendlyMessage = '浏览器窗口被关闭';
+    } else if (error.message.includes('detached Frame') || error.message.includes('detached')) {
+      friendlyMessage = '浏览器窗口被关闭';
     } else if (error.message.includes('net::ERR')) {
       friendlyMessage = '网络连接失败，请检查网络设置';
     } else if (error.message.includes('Element not found')) {
       friendlyMessage = '页面元素未找到，可能是页面结构变化';
     }
     
-    logger.error('绑卡异常', friendlyMessage);
+    taskLogger.error('绑卡异常', friendlyMessage);
     return { success: false, error: friendlyMessage };
   }
 }
@@ -216,8 +231,7 @@ async function fillAndSubmitCard(page, cardInfo, addressInfo, logger) {
       await page.waitForSelector('input[name="number"], input[placeholder*="卡号"], input[autocomplete="cc-number"]', { timeout: 5000 });
       logger.success('输入框已就绪');
     } catch (e) {
-      logger.error('输入框未出现', e.message);
-      throw e;
+      throw new Error('输入框未出现');
     }
     
     // 填写卡信息 - 使用稳定的输入方式
@@ -253,17 +267,21 @@ async function fillAndSubmitCard(page, cardInfo, addressInfo, logger) {
     // 填写账单地址
     logger.step(4, '填写账单信息');
     
-    // 点击"手动输入地址"按钮
-    const manualAddressBtn = await page.evaluateHandle(() => {
-      return Array.from(document.querySelectorAll('button')).find(btn => 
-        btn.textContent.includes('手动输入地址') || 
-        btn.textContent.includes('Enter address manually')
-      );
-    });
-    
-    if (manualAddressBtn) {
-      await manualAddressBtn.asElement().click();
-      await sleep(500);
+    // 点击"手动输入地址"按钮（如果存在）
+    try {
+      const manualAddressBtn = await page.evaluateHandle(() => {
+        return Array.from(document.querySelectorAll('button')).find(btn => 
+          btn.textContent.includes('手动输入地址') || 
+          btn.textContent.includes('Enter address manually')
+        );
+      });
+      
+      if (manualAddressBtn && manualAddressBtn.asElement && manualAddressBtn.asElement()) {
+        await manualAddressBtn.asElement().click();
+        await sleep(500);
+      }
+    } catch (e) {
+      // 忽略，可能不需要点击手动输入按钮
     }
     
     // 按照表单顺序填写：国家 → 地址第1行 → 城市 → 邮编 → 州
@@ -278,7 +296,6 @@ async function fillAndSubmitCard(page, cardInfo, addressInfo, logger) {
     
     // 2. 获取所有文本输入框（按DOM顺序）
     const allInputs = await page.$$('input[type="text"], input:not([type]):not([type="hidden"]):not([type="checkbox"]):not([type="radio"])');
-    logger.info(`找到 ${allInputs.length} 个文本输入框`);
     
     // 填写地址第1行（通常是第一个或第二个输入框，在卡信息之后）
     // 查找 placeholder 包含"地址"或"Address"的输入框
@@ -432,29 +449,46 @@ async function fillAndSubmitCard(page, cardInfo, addressInfo, logger) {
     
     // 尝试多种方式查找按钮
     let submitBtn = null;
+    let clicked = false;
     
-    // 1. 通过文本查找
-    submitBtn = await page.evaluateHandle(() => {
-      const buttons = Array.from(document.querySelectorAll('button, div[role="button"], [class*="button"]'));
-      return buttons.find(btn => 
-        btn.textContent.includes('开始试用') || 
-        btn.textContent.includes('Start trial') ||
-        btn.textContent.includes('Submit')
-      );
-    });
-    
-    // 2. 如果没找到，尝试传统方式
-    if (!submitBtn || !submitBtn.asElement) {
-      submitBtn = await page.$('button[type="submit"]');
+    // 1. 通过 Stripe 特定的 class 查找（SubmitButton）
+    submitBtn = await page.$('.SubmitButton, [class*="SubmitButton"]');
+    if (submitBtn) {
+      await submitBtn.click();
+      clicked = true;
+      logger.success('已点击提交按钮');
     }
     
-    if (submitBtn) {
-      if (submitBtn.asElement) {
+    // 2. 如果没找到，通过文本查找
+    if (!clicked) {
+      submitBtn = await page.evaluateHandle(() => {
+        const buttons = Array.from(document.querySelectorAll('button, div[role="button"], [class*="button"], [class*="Button"]'));
+        return buttons.find(btn => 
+          btn.textContent.includes('开始试用') || 
+          btn.textContent.includes('Start trial') ||
+          btn.textContent.includes('Submit') ||
+          btn.textContent.includes('试用')
+        );
+      });
+      
+      if (submitBtn && submitBtn.asElement) {
         await submitBtn.asElement().click();
-      } else {
-        await submitBtn.click();
+        clicked = true;
+        logger.success('已点击提交按钮');
       }
-      logger.success('已点击开始试用');
+    }
+    
+    // 3. 如果还没找到，尝试 button[type="submit"]
+    if (!clicked) {
+      submitBtn = await page.$('button[type="submit"]');
+      if (submitBtn) {
+        await submitBtn.click();
+        clicked = true;
+        logger.success('已点击提交按钮');
+      }
+    }
+    
+    if (clicked) {
       logger.progress('等待支付处理');
       
       // 立即返回pending状态，让主流程显示按钮
@@ -467,7 +501,7 @@ async function fillAndSubmitCard(page, cardInfo, addressInfo, logger) {
     }
     
   } catch (error) {
-    logger.error('填写失败', error.message);
+    // 不输出日志，让调用者统一处理
     return { success: false, error: error.message };
   }
 }
@@ -685,7 +719,7 @@ async function retryBind(page, customCardInfo = null) {
       friendlyMessage = '网络连接失败';
     }
     
-    logger.error('重试异常', friendlyMessage);
+    logger.error('绑卡失败', friendlyMessage);
     return { success: false, error: friendlyMessage };
   }
 }

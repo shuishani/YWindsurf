@@ -219,22 +219,8 @@ async function resetDataPath() {
 
 // 监听路径变更事件
 ipcRenderer.on('data-path-changed', async () => {
-  try {
-    // 重新加载路径显示
-    await loadPathSettings();
-    
-    // 重新加载其他页面的数据
-    if (typeof loadAccounts === 'function') {
-      await loadAccounts();
-    }
-    if (typeof loadVirtualCards === 'function') {
-      await loadVirtualCards();
-    }
-    
-    // 数据路径变更，已重新加载
-  } catch (error) {
-    // 重新加载数据失败，静默处理
-  }
+  // 路径变更后刷新整个页面，确保所有模块重新初始化
+  location.reload();
 });
 
 function showPathStatus(message, type) {

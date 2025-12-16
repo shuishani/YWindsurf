@@ -6,6 +6,7 @@ module.exports = {
     asar: true,
     name: 'YWindsurf',
     executableName: 'YWindsurf',
+    icon: './build/icon',  // 不需要扩展名，会自动选择 .ico/.icns
   },
   rebuildConfig: {},
   makers: [

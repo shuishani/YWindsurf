@@ -3,7 +3,7 @@
  */
 
 const { ipcRenderer } = require('electron');
-const { showToast, calculateExpiry, processAccountCredits, formatDateTime, handleError, generateEmptyStateHTML } = require('../utils/utils');
+const { showToast, calculateExpiry, processAccountCredits, formatDateTime, handleError, generateEmptyStateHTML, createModal } = require('../utils/utils');
 
 // ==================== 全局变量 ====================
 let accountsCache = [];
@@ -85,7 +85,7 @@ function renderCardOptionsGeneric(selectorKey) {
   const autoOption = document.createElement('div');
   autoOption.className = `card-option ${config.selectedId === 'auto' ? 'selected' : ''}`;
   autoOption.innerHTML = `
-    <div class="card-icon">🔄</div>
+    <div class="card-icon">${getIcon('refresh', 16)}</div>
     <div class="card-info">
       <div class="card-number">自动选择</div>
       <div class="card-details">系统自动选择最适合的虚拟卡</div>
@@ -121,7 +121,7 @@ function createCardOptionGeneric(selectorKey, card, type, index = 0) {
   option.className = `card-option ${config.selectedId === card.id ? 'selected' : ''}`;
   
   const indexStr = index > 0 ? `${index}. ` : '';
-  const icon = type === 'bin' ? '🎲' : '💳';
+  const icon = type === 'bin' ? getIcon('cardBin', 14) : getIcon('creditCard', 14);
   
   let mainInfo, subInfo;
   if (type === 'bin') {
@@ -212,14 +212,13 @@ function formatAccountData(acc) {
  * 计算账号样式和状态
  */
 function calculateAccountStyles(acc) {
-  // 使用统一的积分和PRO账号处理函数
-  const creditsInfo = processAccountCredits(acc.usedPromptCredits, acc.monthlyPromptCredits, acc.usageUnknown);
+  // 使用统一的积分和PRO账号处理函数，传入 planType
+  const creditsInfo = processAccountCredits(acc.usedPromptCredits, acc.monthlyPromptCredits, acc.usageUnknown, acc.planType);
   
-  // 绑卡状态
+  // 绑卡状态 - 后端已根据积分判断，前端只负责显示
   let cardBoundHtml;
-  if (acc.monthlyPromptCredits >= 500) {
-    cardBoundHtml = '<span class="badge badge-card-bound">已绑卡</span>';
-  } else if (acc.needsManualBinding === true) {
+  if (acc.needsManualBinding === true) {
+    // 需要手动确认绑卡结果
     cardBoundHtml = `
       <div style="display:flex; gap:4px;">
         <button onclick="markCardBound('${acc.email}', true); event.stopPropagation();" class="badge badge-card-bound" style="border:none; cursor:pointer;">✓</button>
@@ -234,9 +233,9 @@ function calculateAccountStyles(acc) {
     cardBoundHtml = '<span class="badge badge-card-none">未绑</span>';
   }
   
-  // Token 状态
-  const tokenHtml = acc.accountType 
-    ? '<span style="color:#34c759; font-size:12px;">● 已获取</span>'
+  // Refresh Token 状态（有 Token 可以无密码刷新）- 紫色区分
+  const tokenHtml = acc.refreshToken 
+    ? '<span style="color:#af52de; font-size:12px;">● 已获取</span>'
     : '<span style="color:#86868b; font-size:12px;">○ 未获取</span>';
       
   // 到期时间样式
@@ -284,27 +283,12 @@ function generateAccountRowHTML(acc, styles, isCurrentAccount = false, index = 0
       <td>${styles.tokenHtml}</td>
       <td>
         <div style="display:flex; align-items:center; gap:4px;">
-          <button class="action-btn primary" onclick="getAccountDetails('${acc.email}', '${acc.password}'); event.stopPropagation();" title="刷新信息">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <path d="M23 4v6h-6"></path>
-              <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path>
-            </svg>
+          <button class="action-btn primary" onclick="getAccountDetails('${acc.email}'); event.stopPropagation();" title="刷新信息">
+            ${getIcon('refreshCw', 16)}
           </button>
-          <div style="position:relative;">
-            <button class="action-btn" onclick="toggleActionMenu(event, '${acc.id}')">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <circle cx="12" cy="12" r="1"></circle>
-                <circle cx="12" cy="5" r="1"></circle>
-                <circle cx="12" cy="19" r="1"></circle>
-              </svg>
-            </button>
-            <div class="action-menu" id="menu-${acc.id}">
-              <div class="action-menu-item" onclick="switchAccount('${acc.email}', '${acc.password}')">🔄 切号</div>
-              <div class="action-menu-item" onclick="viewAccount('${acc.email}', '${acc.password}')">📋 查看详情</div>
-              <div class="action-menu-item" onclick="editAccount('${acc.id}', '${acc.email}', '${acc.password}')">✏️ 编辑账号</div>
-              <div class="action-menu-item danger" onclick="deleteAccountFromTable('${acc.id}', '${acc.email}')">🗑️ 删除账号</div>
-            </div>
-          </div>
+          <button class="action-btn" onclick="toggleActionMenu(event, '${acc.id}')">
+            ${getIcon('moreVertical', 16)}
+          </button>
         </div>
       </td>
     </tr>
@@ -312,6 +296,14 @@ function generateAccountRowHTML(acc, styles, isCurrentAccount = false, index = 0
 }
 
 // ==================== 账号列表渲染 ====================
+let currentSearchKeyword = ''; // 当前搜索关键词
+
+// 根据邮箱过滤账号
+function filterAccountsByEmail(keyword) {
+  currentSearchKeyword = keyword.trim().toLowerCase();
+  renderAccounts();
+}
+
 async function renderAccounts() {
   const tbody = document.getElementById('accountsList');
   if (!tbody) return;
@@ -336,8 +328,22 @@ async function renderAccounts() {
     return;
   }
 
+  // 根据搜索关键词过滤账号
+  let filteredAccounts = accountsCache;
+  if (currentSearchKeyword) {
+    filteredAccounts = accountsCache.filter(acc => 
+      acc.email && acc.email.toLowerCase().includes(currentSearchKeyword)
+    );
+  }
+
+  // 如果过滤后没有结果
+  if (filteredAccounts.length === 0) {
+    tbody.innerHTML = generateEmptyStateHTML(9, '未找到匹配的账号', `没有包含 "${currentSearchKeyword}" 的邮箱`);
+    return;
+  }
+
   // 渲染账号列表（带序号）
-  tbody.innerHTML = accountsCache.map((acc, index) => {
+  tbody.innerHTML = filteredAccounts.map((acc, index) => {
     const formattedAcc = formatAccountData(acc);
     const styles = calculateAccountStyles(formattedAcc);
     const isCurrentAccount = currentEmail && acc.email === currentEmail;
@@ -429,43 +435,79 @@ async function addManualAccount() {
   }
 }
 
-// 切换三点菜单
+// 切换三点菜单（动态创建菜单插入到 body）
 function toggleActionMenu(event, id) {
   event.stopPropagation();
-  const menu = document.getElementById(`menu-${id}`);
   
-  // 关闭所有其他菜单
-  document.querySelectorAll('.action-menu').forEach(m => {
-    if (m.id !== `menu-${id}`) {
-      m.classList.remove('show');
-      m.style.bottom = '';
-      m.style.top = '';
-    }
-  });
+  // 移除已存在的菜单
+  const existingMenu = document.getElementById('accountActionMenu');
+  if (existingMenu) existingMenu.remove();
   
-  const isShowing = menu.classList.contains('show');
-  menu.classList.toggle('show');
+  // 获取账号信息
+  const acc = accountsCache.find(a => a.id === id);
+  if (!acc) return;
   
-  // 如果菜单被打开，检查是否需要向上展开
-  if (!isShowing) {
-    setTimeout(() => {
-      const menuRect = menu.getBoundingClientRect();
-      const viewportHeight = window.innerHeight;
-      const spaceBelow = viewportHeight - menuRect.bottom;
-      
-      if (spaceBelow < 150) {
-        menu.style.bottom = '100%';
-        menu.style.top = 'auto';
-        menu.style.marginTop = '0';
-        menu.style.marginBottom = '4px';
-      } else {
-        menu.style.bottom = '';
-        menu.style.top = '100%';
-        menu.style.marginTop = '4px';
-        menu.style.marginBottom = '';
-      }
-    }, 10);
+  // 获取按钮位置
+  const button = event.currentTarget;
+  const buttonRect = button.getBoundingClientRect();
+  const viewportWidth = window.innerWidth;
+  const viewportHeight = window.innerHeight;
+  
+  // 菜单固定宽度 140px，计算位置
+  const menuWidth = 140;
+  const menuHeight = 160;
+  
+  // 默认显示在按钮下方，右对齐按钮（向左展开）
+  let left = buttonRect.right - menuWidth;
+  let top = buttonRect.bottom + 4;
+  
+  // 检查左侧是否超出屏幕
+  if (left < 10) {
+    left = 10;
   }
+  
+  // 检查底部是否超出屏幕，改为向上展开
+  if (top + menuHeight > viewportHeight) {
+    top = buttonRect.top - menuHeight - 4;
+  }
+  
+  // 确保不超出顶部
+  if (top < 10) top = 10;
+  
+  // 创建菜单 HTML，直接设置位置
+  const menuHTML = `
+    <div id="accountActionMenu" class="action-menu show" style="position:fixed; left:${left}px; top:${top}px;">
+      <div class="action-menu-item" onclick="pinAccount('${acc.id}'); document.getElementById('accountActionMenu')?.remove();">${getMenuIcon('arrowUp')}置顶账号</div>
+      <div class="action-menu-item" onclick="switchAccount('${acc.email}', '${acc.password}'); document.getElementById('accountActionMenu')?.remove();">${getMenuIcon('repeat')}切换账号</div>
+      <div class="action-menu-item" onclick="viewAccount('${acc.email}', '${acc.password}'); document.getElementById('accountActionMenu')?.remove();">${getMenuIcon('eye')}查看详情</div>
+      <div class="action-menu-item" onclick="editAccount('${acc.id}', '${acc.email}', '${acc.password}'); document.getElementById('accountActionMenu')?.remove();">${getMenuIcon('edit')}编辑账号</div>
+      <div class="action-menu-item danger" onclick="deleteAccountFromTable('${acc.id}', '${acc.email}'); document.getElementById('accountActionMenu')?.remove();">${getMenuIcon('trash')}删除账号</div>
+    </div>
+  `;
+  
+  document.body.insertAdjacentHTML('beforeend', menuHTML);
+  
+  // 点击其他地方关闭菜单
+  setTimeout(() => {
+    const closeMenu = (e) => {
+      const menu = document.getElementById('accountActionMenu');
+      if (menu && !menu.contains(e.target)) {
+        menu.remove();
+        document.removeEventListener('click', closeMenu);
+        document.querySelector('.main-content')?.removeEventListener('scroll', scrollClose);
+      }
+    };
+    const scrollClose = () => {
+      const menu = document.getElementById('accountActionMenu');
+      if (menu) {
+        menu.remove();
+        document.removeEventListener('click', closeMenu);
+        document.querySelector('.main-content')?.removeEventListener('scroll', scrollClose);
+      }
+    };
+    document.addEventListener('click', closeMenu);
+    document.querySelector('.main-content')?.addEventListener('scroll', scrollClose);
+  }, 100);
 }
 
 // 双击行复制账号
@@ -477,216 +519,120 @@ async function copyAccountRow(email, password) {
 
 // 查看账号详细信息
 function viewAccount(email, password) {
-  // 从缓存中找到完整的账号信息
   const account = accountsCache.find(acc => acc.email === email);
   if (!account) {
     showAlertDialog('查看失败', '未找到账号信息', 'error');
     return;
   }
 
-  // 创建详细信息弹窗
-  const modal = document.createElement('div');
-  modal.style.cssText = `
-    position: fixed;
-    top: 0;
-    left: 0;
-    width: 100%;
-    height: 100%;
-    background: rgba(0,0,0,0.5);
-    display: flex;
-    justify-content: center;
-    align-items: center;
-    z-index: 10000;
-  `;
+  // 格式化数据
+  const accountTypeText = account.planType || account.accountType || 'Unknown';
+  const cardBoundText = account.cardBound === true ? '已绑卡' : account.cardBound === false ? '未绑卡' : '未知';
+  const createdTime = account.createdAt ? new Date(account.createdAt).toLocaleString('zh-CN') : '未知';
+  const lastRefreshedTime = account.lastRefreshed ? new Date(account.lastRefreshed).toLocaleString('zh-CN') : '从未刷新';
+  const promptCredits = (account.usedPromptCredits !== undefined && account.monthlyPromptCredits !== undefined) 
+    ? `${account.usedPromptCredits} / ${account.monthlyPromptCredits}` : '未知';
+  const expiry = calculateExpiry(account.createdAt, account.expiresAt);
+  const expiryInfo = expiry.expiryDate ? expiry.expiryText : '未知';
 
-  const dialog = document.createElement('div');
-  dialog.style.cssText = `
-    background: white;
-    border-radius: 12px;
-    padding: 24px;
-    max-width: 500px;
-    width: 90%;
-    max-height: 80vh;
-    overflow-y: auto;
-    box-shadow: 0 10px 30px rgba(0,0,0,0.3);
-  `;
-
-  // 格式化账号类型
-  let accountTypeText = account.accountType || 'Unknown';
-  // 如果已经包含PRO就不再重复添加
-  if (account.isPro && !accountTypeText.includes('PRO')) {
-    accountTypeText += ' (PRO)';
-  }
-
-  // 格式化绑卡状态
-  let cardBoundText = '未知';
-  if (account.cardBound === true) {
-    cardBoundText = '已绑卡';
-  } else if (account.cardBound === false) {
-    cardBoundText = '未绑卡';
-  }
-
-  // 格式化创建时间
-  let createdTime = '未知';
-  if (account.createdAt) {
-    createdTime = new Date(account.createdAt).toLocaleString('zh-CN');
-  }
-
-  // 格式化最后刷新时间
-  let lastRefreshedTime = '从未刷新';
-  if (account.lastRefreshed) {
-    lastRefreshedTime = new Date(account.lastRefreshed).toLocaleString('zh-CN');
-  }
-
-  // 格式化积分信息
-  let promptCredits = '未知';
-  if (account.usedPromptCredits !== undefined && account.monthlyPromptCredits !== undefined) {
-    promptCredits = `${account.usedPromptCredits} / ${account.monthlyPromptCredits}`;
-  }
-
-  // 计算到期时间 - 使用系统的calculateExpiry函数
-  let expiryInfo = '未知';
-  if (account.expiresAt || account.createdAt) {
-    const expiry = calculateExpiry(account.createdAt, account.expiresAt);
-    if (expiry.expiryDate) {
-      expiryInfo = expiry.expiryText;
-    }
-  }
-
-  dialog.innerHTML = `
-    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px; border-bottom: 1px solid #e5e5ea; padding-bottom: 16px;">
-      <h2 style="margin: 0; color: #1d1d1f; font-size: 18px;">账号详细信息</h2>
-      <button onclick="this.closest('.account-detail-modal').remove()" style="background: none; border: none; font-size: 24px; cursor: pointer; color: #86868b;">&times;</button>
+  createModal('account-detail-modal', `
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; border-bottom: 1px solid #e5e5ea; padding-bottom: 10px;">
+      <h2 style="margin: 0; color: #1d1d1f; font-size: 16px; font-weight: 600;">账号详细信息</h2>
+      <button onclick="this.closest('.account-detail-modal').remove()" style="background: none; border: none; font-size: 18px; cursor: pointer; color: #86868b;">&times;</button>
     </div>
+    <div style="font-size: 13px;">
+      <!-- 邮箱 -->
+      <div style="display: flex; justify-content: space-between; align-items: center; padding: 5px 0; border-bottom: 1px solid #f0f0f0;">
+        <div style="flex: 1; min-width: 0;"><span style="color: #86868b;">邮箱: </span><span style="color: #1d1d1f; font-family: monospace; font-size: 12px;">${account.email}</span></div>
+        <button onclick="navigator.clipboard.writeText('${account.email}'); showToast('邮箱已复制', 'success'); event.stopPropagation();" style="padding: 2px 8px; font-size: 11px; background: #007aff; color: white; border: none; border-radius: 4px; cursor: pointer; margin-left: 8px;">复制</button>
+      </div>
+      <!-- 密码 -->
+      <div style="display: flex; justify-content: space-between; align-items: center; padding: 5px 0; border-bottom: 1px solid #f0f0f0;">
+        <div style="flex: 1; min-width: 0;"><span style="color: #86868b;">密码: </span><span style="color: #1d1d1f; font-family: monospace; font-size: 12px;">${account.password || '无'}</span></div>
+        ${account.password ? `<button onclick="navigator.clipboard.writeText('${account.password}'); showToast('密码已复制', 'success'); event.stopPropagation();" style="padding: 2px 8px; font-size: 11px; background: #007aff; color: white; border: none; border-radius: 4px; cursor: pointer; margin-left: 8px;">复制</button>` : ''}
+      </div>
+      <!-- 详细信息列表 -->
+      <div style="margin-bottom: 10px;">
+        <div style="display: flex; justify-content: space-between; padding: 4px 0; border-bottom: 1px solid #f0f0f0;"><span style="color: #86868b;">用户名</span><span style="color: #1d1d1f;">${account.name || '未知'}</span></div>
+        <div style="display: flex; justify-content: space-between; padding: 4px 0; border-bottom: 1px solid #f0f0f0;"><span style="color: #86868b;">账号类型</span><span style="color: #1d1d1f;">${accountTypeText}</span></div>
+        <div style="display: flex; justify-content: space-between; padding: 4px 0; border-bottom: 1px solid #f0f0f0;"><span style="color: #86868b;">绑卡状态</span><span style="color: #1d1d1f;">${cardBoundText}</span></div>
+        <div style="display: flex; justify-content: space-between; padding: 4px 0; border-bottom: 1px solid #f0f0f0;"><span style="color: #86868b;">积分</span><span style="color: #1d1d1f;">${promptCredits}</span></div>
+        <div style="display: flex; justify-content: space-between; padding: 4px 0; border-bottom: 1px solid #f0f0f0;"><span style="color: #86868b;">创建时间</span><span style="color: #1d1d1f;">${createdTime}</span></div>
+        <div style="display: flex; justify-content: space-between; padding: 4px 0; border-bottom: 1px solid #f0f0f0;"><span style="color: #86868b;">最后刷新</span><span style="color: #1d1d1f;">${lastRefreshedTime}</span></div>
+        <div style="display: flex; justify-content: space-between; padding: 4px 0;"><span style="color: #86868b;">到期时间</span><span style="color: #1d1d1f;">${expiryInfo}</span></div>
+      </div>
+      ${account.userId ? `<div style="margin-bottom: 6px; font-size: 12px;"><span style="color: #86868b;">用户ID: </span><span style="color: #1d1d1f; font-family: monospace;">${account.userId}</span></div>` : ''}
+      ${account.apiKey ? `
+      <div style="margin-bottom: 10px;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
+          <span style="color: #86868b; font-size: 12px;">API Key</span>
+          <button onclick="navigator.clipboard.writeText('${account.apiKey}'); showToast('API Key已复制', 'success'); event.stopPropagation();" style="padding: 2px 8px; font-size: 11px; background: #007aff; color: white; border: none; border-radius: 4px; cursor: pointer;">复制</button>
+        </div>
+        <div style="background: #f5f5f7; padding: 6px 8px; border-radius: 4px; font-family: monospace; font-size: 10px; color: #1d1d1f; word-break: break-all; line-height: 1.3;">${account.apiKey}</div>
+      </div>` : ''}
+      ${account.refreshToken ? `
+      <div style="margin-bottom: 10px;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
+          <span style="color: #86868b; font-size: 12px;">Refresh Token</span>
+          <button onclick="navigator.clipboard.writeText('${account.refreshToken}'); showToast('Token已复制', 'success'); event.stopPropagation();" style="padding: 2px 8px; font-size: 11px; background: #007aff; color: white; border: none; border-radius: 4px; cursor: pointer;">复制</button>
+        </div>
+        <div style="background: #f5f5f7; padding: 6px 8px; border-radius: 4px; font-family: monospace; font-size: 10px; color: #1d1d1f; word-break: break-all; line-height: 1.3;">${account.refreshToken}</div>
+      </div>` : ''}
+    </div>
+    <div style="display: flex; gap: 10px; margin-top: 16px; padding-top: 12px; border-top: 1px solid #e5e5ea;">
+      <button onclick="navigator.clipboard.writeText('${account.email} ${account.password || ''}'); showToast('账号密码已复制', 'success');" style="flex: 1; padding: 8px; background: #007aff; color: white; border: none; border-radius: 6px; cursor: pointer; font-size: 13px;">复制账号密码</button>
+      <button onclick="refreshAndReloadDetail('${account.email}', '${account.password}')" style="flex: 1; padding: 8px; background: #34c759; color: white; border: none; border-radius: 6px; cursor: pointer; font-size: 13px;">刷新信息</button>
+    </div>
+  `, { maxWidth: '420px' });
+}
+
+// 刷新账号信息并重新加载详情弹窗
+async function refreshAndReloadDetail(email, password) {
+  // 关闭当前弹窗
+  document.querySelector('.account-detail-modal')?.remove();
+  
+  showToast('正在刷新...', 'info');
+  
+  try {
+    // 调用后端刷新接口
+    const result = await ipcRenderer.invoke('refresh-account-credits', email);
     
-    <div style="line-height: 1.6; font-size: 14px;">
-      <div style="margin-bottom: 8px;">
-        <span style="color: #86868b;">📧 邮箱地址: </span>
-        <span style="color: #1d1d1f; font-family: monospace;">${account.email}</span>
-      </div>
-      
-      <div style="margin-bottom: 8px;">
-        <span style="color: #86868b;">🔑 密码: </span>
-        <span style="color: #1d1d1f; font-family: monospace;">${account.password}</span>
-      </div>
-      
-      <div style="margin-bottom: 8px;">
-        <span style="color: #86868b;">👤 用户名: </span>
-        <span style="color: #1d1d1f;">${account.name || '未知'}</span>
-      </div>
-      
-      <div style="margin-bottom: 8px;">
-        <span style="color: #86868b;">🏷️ 账号类型: </span>
-        <span style="color: #1d1d1f;">${accountTypeText}</span>
-      </div>
-      
-      <div style="margin-bottom: 8px;">
-        <span style="color: #86868b;">💳 绑卡状态: </span>
-        <span style="color: #1d1d1f;">${cardBoundText}</span>
-      </div>
-      
-      <div style="margin-bottom: 8px;">
-        <span style="color: #86868b;">⚡ 积分: </span>
-        <span style="color: #1d1d1f;">${promptCredits}</span>
-      </div>
-      
-      <div style="margin-bottom: 8px;">
-        <span style="color: #86868b;">📅 创建时间: </span>
-        <span style="color: #1d1d1f;">${createdTime}</span>
-      </div>
-      
-      <div style="margin-bottom: 8px;">
-        <span style="color: #86868b;">🔄 最后刷新: </span>
-        <span style="color: #1d1d1f;">${lastRefreshedTime}</span>
-      </div>
-      
-      <div style="margin-bottom: 8px;">
-        <span style="color: #86868b;">⏰ 到期时间: </span>
-        <span style="color: #1d1d1f;">${expiryInfo}</span>
-      </div>
-      
-      ${account.userId ? `
-      <div style="margin-bottom: 8px;">
-        <span style="color: #86868b;">🆔 用户ID: </span>
-        <span style="color: #1d1d1f; font-family: monospace;">${account.userId}</span>
-      </div>
-      ` : ''}
-    </div>
-    
-    <div style="display: flex; gap: 12px; margin-top: 24px; padding-top: 16px; border-top: 1px solid #e5e5ea;">
-      <button onclick="navigator.clipboard.writeText('${account.email} ${account.password}'); showToast('账号密码已复制', 'success');" 
-              style="flex: 1; padding: 10px; background: #007aff; color: white; border: none; border-radius: 6px; cursor: pointer;">
-        📋 复制账号密码
-      </button>
-      <button onclick="getAccountDetails('${account.email}', '${account.password}')" 
-              style="flex: 1; padding: 10px; background: #34c759; color: white; border: none; border-radius: 6px; cursor: pointer;">
-        🔄 刷新信息
-      </button>
-    </div>
-  `;
-
-  modal.className = 'account-detail-modal';
-  modal.appendChild(dialog);
-  document.body.appendChild(modal);
-
-  // 点击背景关闭弹窗
-  modal.addEventListener('click', (e) => {
-    if (e.target === modal) {
-      modal.remove();
+    if (result.success) {
+      // 重新加载账号列表以更新缓存
+      await loadAccounts();
+      showToast('刷新成功', 'success');
+    } else {
+      showToast(`刷新失败: ${result.error}`, 'error');
     }
-  });
+  } catch (error) {
+    showToast(`刷新异常: ${error.message}`, 'error');
+  }
+  
+  // 重新打开详情弹窗（使用最新的缓存数据）
+  viewAccount(email, password);
 }
 
 // 编辑账号信息
 function editAccount(id, email, password) {
-  // 从缓存中找到账号信息
   const account = accountsCache.find(acc => acc.id === id);
   if (!account) {
     showAlertDialog('编辑失败', '未找到账号信息', 'error');
     return;
   }
 
-  // 创建编辑弹窗
-  const modal = document.createElement('div');
-  modal.style.cssText = `
-    position: fixed;
-    top: 0;
-    left: 0;
-    width: 100%;
-    height: 100%;
-    background: rgba(0,0,0,0.5);
-    display: flex;
-    justify-content: center;
-    align-items: center;
-    z-index: 10000;
-  `;
-
-  const dialog = document.createElement('div');
-  dialog.style.cssText = `
-    background: white;
-    border-radius: 12px;
-    padding: 24px;
-    max-width: 400px;
-    width: 90%;
-    box-shadow: 0 10px 30px rgba(0,0,0,0.3);
-  `;
-
-  dialog.innerHTML = `
+  createModal('edit-account-modal', `
     <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px; border-bottom: 1px solid #e5e5ea; padding-bottom: 16px;">
       <h2 style="margin: 0; color: #1d1d1f; font-size: 18px;">编辑账号</h2>
       <button onclick="this.closest('.edit-account-modal').remove()" style="background: none; border: none; font-size: 24px; cursor: pointer; color: #86868b;">&times;</button>
     </div>
-    
     <div style="margin-bottom: 16px;">
-      <label style="display: block; margin-bottom: 6px; color: #1d1d1f; font-weight: 500;">📧 邮箱地址</label>
+      <label style="display: block; margin-bottom: 6px; color: #1d1d1f; font-weight: 500;">邮箱地址</label>
       <input type="email" id="editEmail" value="${account.email}" style="width: 100%; padding: 10px; border: 1px solid #d2d2d7; border-radius: 6px; font-size: 14px; box-sizing: border-box;">
     </div>
-    
     <div style="margin-bottom: 24px;">
-      <label style="display: block; margin-bottom: 6px; color: #1d1d1f; font-weight: 500;">🔑 密码</label>
+      <label style="display: block; margin-bottom: 6px; color: #1d1d1f; font-weight: 500;">密码</label>
       <input type="text" id="editPassword" value="${account.password}" style="width: 100%; padding: 10px; border: 1px solid #d2d2d7; border-radius: 6px; font-size: 14px; box-sizing: border-box;">
     </div>
-    
     <div style="display: flex; gap: 12px;">
       <button onclick="this.closest('.edit-account-modal').remove()" 
               style="flex: 1; padding: 10px; background: #f5f5f7; color: #1d1d1f; border: none; border-radius: 6px; cursor: pointer;">
@@ -697,23 +643,9 @@ function editAccount(id, email, password) {
         保存
       </button>
     </div>
-  `;
+  `);
 
-  modal.className = 'edit-account-modal';
-  modal.appendChild(dialog);
-  document.body.appendChild(modal);
-
-  // 点击背景关闭弹窗
-  modal.addEventListener('click', (e) => {
-    if (e.target === modal) {
-      modal.remove();
-    }
-  });
-
-  // 聚焦到邮箱输入框
-  setTimeout(() => {
-    document.getElementById('editEmail').focus();
-  }, 100);
+  setTimeout(() => document.getElementById('editEmail').focus(), 100);
 }
 
 // 保存账号编辑
@@ -761,137 +693,74 @@ async function saveAccountEdit(id) {
   }
 }
 
-// 获取账号积分详情
-async function getAccountDetails(email, password) {
+// 刷新状态管理
+let refreshingAccounts = new Set();  // 正在刷新的账号
+let pendingLoadAccounts = false;     // 是否有待执行的 loadAccounts
+let loadAccountsTimer = null;        // 防抖定时器
+
+// 防抖加载账号列表
+function debouncedLoadAccounts() {
+  pendingLoadAccounts = true;
+  if (loadAccountsTimer) clearTimeout(loadAccountsTimer);
+  loadAccountsTimer = setTimeout(async () => {
+    if (pendingLoadAccounts && refreshingAccounts.size === 0) {
+      pendingLoadAccounts = false;
+      await loadAccounts();
+    }
+  }, 300);
+}
+
+// 刷新单个账号积分（调用后端统一接口）
+async function getAccountDetails(email) {
+  // 防止重复刷新同一账号
+  if (refreshingAccounts.has(email)) {
+    showToast(`${email} 正在刷新中...`, 'info');
+    return;
+  }
+  
+  refreshingAccounts.add(email);
   logger.info(`正在刷新账号信息: ${email}`);
   
   try {
-    // 注意：IPC调用传递两个独立参数，不是对象
-    const result = await ipcRenderer.invoke('get-account-details', email, password);
+    // 调用后端统一刷新接口，后端会自动处理 Token/密码优先级和保存
+    const result = await ipcRenderer.invoke('refresh-account-credits', email);
     
     if (result.success) {
-      const data = result.data;
-      
-      // 检查数据是否存在
-      if (!data) {
-        logger.warning(`刷新账号信息失败: 返回数据为空`);
-        showToast(`❌ 刷新账号信息失败: 返回数据为空`, 'error');
-        return;
-      }
-      
-      // 更新账号数据并保存
-      try {
-        const accounts = await ipcRenderer.invoke('get-accounts');
-        const accountIndex = accounts.findIndex(acc => acc.email === email);
-        
-        if (accountIndex !== -1) {
-          // 根据积分限额判断账号类型和绑卡状态
-          let accountType = 'Free';
-          let cardBound = false;  // 默认未绑卡
-          
-          if (data.monthlyPromptCredits >= 500) {
-            accountType = 'PRO';  // 绑卡的付费PRO
-            cardBound = true;  // 500积分肯定是已绑卡
-          } else if (data.monthlyPromptCredits === 100) {
-            accountType = 'Trial';  // 试用PRO
-            cardBound = false;  // 100积分未绑卡
-          } else {
-            accountType = 'Free';  // 免费账号（25积分或其他）
-            cardBound = false;  // 免费账号未绑卡
-          }
-          
-          // 更新账号信息
-          const updatedAccount = {
-            ...accounts[accountIndex],
-            accountType: accountType,
-            isPro: data.isPro,
-            usedPromptCredits: data.usedPromptCredits,
-            monthlyPromptCredits: data.monthlyPromptCredits,
-            usedFlowCredits: data.usedFlowCredits,
-            monthlyFlowCredits: data.monthlyFlowCredits,
-            usedPoints: data.usedPoints,
-            maxPoints: data.maxPoints,
-            userId: data.userId,
-            name: data.name,
-            lastRefreshed: new Date().toISOString(), // 添加最后刷新时间
-            createdAt: data.createdAt || accounts[accountIndex].createdAt, // 更新创建时间
-            expiresAt: data.expiresAt || accounts[accountIndex].expiresAt, // 更新到期时间
-            usageUnknown: data.usageUnknown || false // 使用量未知标记（100积分试用账号）
-          };
-          
-          // 总是更新绑卡状态（根据积分判断）
-          updatedAccount.cardBound = cardBound;
-          // 清除待标记状态
-          updatedAccount.needsManualBinding = false;
-          
-          accounts[accountIndex] = updatedAccount;
-          
-          // 保存到文件
-          await ipcRenderer.invoke('save-accounts', accounts);
-          logger.success(`账号刷新成功: ${email}`);
-        } else {
-          logger.warning(`未找到账号记录: ${email}`);
-        }
-      } catch (error) {
-        logger.error(`更新账号数据失败: ${error.message}`);
-      }
-      
-      // 重新加载账号列表
-      await loadAccounts();
-      
+      logger.success(`账号刷新成功: ${email}`);
       showToast(`账号刷新成功: ${email}`, 'success');
     } else {
       const errorMsg = result.error || '未知错误';
-      
-      // 判断是否是超时错误
       if (errorMsg.includes('timeout')) {
         logger.warning(`账号刷新超时: ${email}`);
         showToast(`账号刷新超时，请重试`, 'error');
       } else {
-        logger.warning(`账号刷新失败: ${email}`);
-        showToast(`账号刷新失败: ${email}`, 'error');
+        logger.warning(`账号刷新失败: ${email} - ${errorMsg}`);
+        showToast(`刷新失败: ${errorMsg}`, 'error');
       }
     }
   } catch (error) {
     logger.warning(`账号刷新异常: ${email}`);
-    showToast(`账号刷新异常: ${email}`, 'error');
+    showToast(`账号刷新异常: ${error.message}`, 'error');
+  } finally {
+    refreshingAccounts.delete(email);
+    // 所有刷新完成后再加载列表
+    debouncedLoadAccounts();
   }
 }
 
 // 通用确认弹窗
 function showConfirmDialog(title, message, onConfirm, onCancel = null) {
-  const modal = document.createElement('div');
-  modal.style.cssText = `
-    position: fixed;
-    top: 0;
-    left: 0;
-    width: 100%;
-    height: 100%;
-    background: rgba(0,0,0,0.5);
-    display: flex;
-    justify-content: center;
-    align-items: center;
-    z-index: 10000;
-  `;
+  // 设置临时回调
+  window.tempConfirmCallback = onConfirm;
+  window.tempCancelCallback = onCancel;
 
-  const dialog = document.createElement('div');
-  dialog.style.cssText = `
-    background: white;
-    border-radius: 12px;
-    padding: 24px;
-    max-width: 400px;
-    width: 90%;
-    box-shadow: 0 10px 30px rgba(0,0,0,0.3);
-  `;
-
-  dialog.innerHTML = `
+  const modal = createModal('confirm-dialog', `
     <div style="margin-bottom: 20px;">
       <h3 style="margin: 0 0 12px 0; color: #1d1d1f; font-size: 18px;">${title}</h3>
       <p style="margin: 0; color: #424245; line-height: 1.5; white-space: pre-line;">${message}</p>
     </div>
-    
     <div style="display: flex; gap: 12px;">
-      <button onclick="this.closest('.confirm-dialog').remove(); ${onCancel ? 'window.tempCancelCallback && window.tempCancelCallback();' : ''}" 
+      <button onclick="this.closest('.confirm-dialog').remove(); window.tempCancelCallback && window.tempCancelCallback();" 
               style="flex: 1; padding: 10px; background: #f5f5f7; color: #1d1d1f; border: none; border-radius: 6px; cursor: pointer;">
         取消
       </button>
@@ -900,17 +769,9 @@ function showConfirmDialog(title, message, onConfirm, onCancel = null) {
         确定
       </button>
     </div>
-  `;
+  `, { closeOnBackdrop: false });
 
-  modal.className = 'confirm-dialog';
-  modal.appendChild(dialog);
-  document.body.appendChild(modal);
-
-  // 设置临时回调
-  window.tempConfirmCallback = onConfirm;
-  window.tempCancelCallback = onCancel;
-
-  // 点击背景关闭弹窗
+  // 点击背景关闭并触发取消回调
   modal.addEventListener('click', (e) => {
     if (e.target === modal) {
       modal.remove();
@@ -921,70 +782,38 @@ function showConfirmDialog(title, message, onConfirm, onCancel = null) {
 
 // 通用提示弹窗
 function showAlertDialog(title, message, type = 'info') {
-  const modal = document.createElement('div');
-  modal.style.cssText = `
-    position: fixed;
-    top: 0;
-    left: 0;
-    width: 100%;
-    height: 100%;
-    background: rgba(0,0,0,0.5);
-    display: flex;
-    justify-content: center;
-    align-items: center;
-    z-index: 10000;
-  `;
+  const typeColors = { info: '#007aff', success: '#34c759', warning: '#ff9500', error: '#ff3b30' };
+  const typeIcons = { info: 'ℹ', success: '✓', warning: '!', error: '✕' };
 
-  const dialog = document.createElement('div');
-  dialog.style.cssText = `
-    background: white;
-    border-radius: 12px;
-    padding: 24px;
-    max-width: 400px;
-    width: 90%;
-    box-shadow: 0 10px 30px rgba(0,0,0,0.3);
-  `;
-
-  const typeColors = {
-    info: '#007aff',
-    success: '#34c759',
-    warning: '#ff9500',
-    error: '#ff3b30'
-  };
-
-  const typeIcons = {
-    info: 'ℹ️',
-    success: '✅',
-    warning: '⚠️',
-    error: '❌'
-  };
-
-  dialog.innerHTML = `
+  createModal('alert-dialog', `
     <div style="margin-bottom: 20px;">
       <h3 style="margin: 0 0 12px 0; color: ${typeColors[type]}; font-size: 18px;">
         ${typeIcons[type]} ${title}
       </h3>
       <p style="margin: 0; color: #424245; line-height: 1.5;">${message}</p>
     </div>
-    
     <div style="text-align: right;">
       <button onclick="this.closest('.alert-dialog').remove()" 
               style="padding: 10px 20px; background: ${typeColors[type]}; color: white; border: none; border-radius: 6px; cursor: pointer;">
         确定
       </button>
     </div>
-  `;
+  `);
+}
 
-  modal.className = 'alert-dialog';
-  modal.appendChild(dialog);
-  document.body.appendChild(modal);
-
-  // 点击背景关闭弹窗
-  modal.addEventListener('click', (e) => {
-    if (e.target === modal) {
-      modal.remove();
+// 置顶账号
+async function pinAccount(id) {
+  try {
+    const result = await ipcRenderer.invoke('pin-account', id);
+    if (result.success) {
+      showToast('账号已置顶', 'success');
+      await loadAccounts();
+    } else {
+      showToast(`置顶失败: ${result.error}`, 'error');
     }
-  });
+  } catch (error) {
+    showToast(`置顶失败: ${error.message}`, 'error');
+  }
 }
 
 // 从表格删除账号
@@ -1008,6 +837,89 @@ async function deleteAccountFromTable(id, email) {
   );
 }
 
+
+// Token导入账号
+function showImportByTokenForm() {
+  document.getElementById('importTokenInput').value = '';
+  document.getElementById('importTokenResult').innerHTML = '';
+  document.getElementById('importByTokenModal').style.display = 'flex';
+}
+
+function hideImportByTokenForm() {
+  document.getElementById('importByTokenModal').style.display = 'none';
+}
+
+async function importAccountsByToken() {
+  const text = document.getElementById('importTokenInput').value.trim();
+  const resultEl = document.getElementById('importTokenResult');
+  
+  if (!text) {
+    resultEl.innerHTML = '<div class="status-message status-error">请输入 Refresh Token</div>';
+    return;
+  }
+  
+  // 按行分割，支持批量导入
+  const tokens = text.split('\n').map(t => t.trim()).filter(t => t.length > 0);
+  
+  if (tokens.length === 0) {
+    resultEl.innerHTML = '<div class="status-message status-error">请输入有效的 Token</div>';
+    return;
+  }
+  
+  resultEl.innerHTML = '<div class="status-message status-info">正在导入...</div>';
+  
+  let successCount = 0;
+  let failCount = 0;
+  let updateCount = 0;
+  const errors = [];
+  
+  for (let i = 0; i < tokens.length; i++) {
+    const token = tokens[i];
+    resultEl.innerHTML = `<div class="status-message status-info">正在导入 ${i + 1}/${tokens.length}...</div>`;
+    
+    try {
+      const result = await ipcRenderer.invoke('import-account-by-token', token);
+      
+      if (result.success) {
+        if (result.isNew) {
+          successCount++;
+        } else {
+          updateCount++;
+        }
+      } else {
+        failCount++;
+        errors.push(`Token ${i + 1}: ${result.error}`);
+      }
+    } catch (error) {
+      failCount++;
+      errors.push(`Token ${i + 1}: ${error.message}`);
+    }
+  }
+  
+  // 显示结果
+  let html = '<div class="status-message status-success">';
+  html += `导入完成：新增 ${successCount} 个，更新 ${updateCount} 个`;
+  if (failCount > 0) {
+    html += `，失败 ${failCount} 个`;
+  }
+  html += '</div>';
+  
+  if (errors.length > 0) {
+    html += '<div class="status-message status-error" style="margin-top:8px; font-size:11px;">';
+    html += errors.slice(0, 5).join('<br>');
+    if (errors.length > 5) {
+      html += `<br>... 还有 ${errors.length - 5} 个错误`;
+    }
+    html += '</div>';
+  }
+  
+  resultEl.innerHTML = html;
+  
+  // 刷新账号列表
+  if (successCount > 0 || updateCount > 0) {
+    await loadAccounts();
+  }
+}
 
 // 导入账号
 function showImportAccountForm() {
@@ -1137,22 +1049,12 @@ function togglePassword(accountId, password) {
     // 显示密码
     pwdElement.textContent = password;
     // 切换为"眼睛斜杠"图标（表示可以隐藏）
-    eyeButton.innerHTML = `
-      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-        <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"></path>
-        <line x1="1" y1="1" x2="23" y2="23"></line>
-      </svg>
-    `;
+    eyeButton.innerHTML = getIcon('eyeOff', 16);
   } else {
     // 隐藏密码
     pwdElement.textContent = '••••••••';
     // 切换为"眼睛"图标（表示可以显示）
-    eyeButton.innerHTML = `
-      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-        <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
-        <circle cx="12" cy="12" r="3"></circle>
-      </svg>
-    `;
+    eyeButton.innerHTML = getIcon('eye', 16);
   }
 }
 
@@ -1161,7 +1063,7 @@ async function markCardBound(email, success) {
   try {
     const result = await ipcRenderer.invoke('mark-card-bound', { email, success });
     if (result.success) {
-      showToast(success ? '✅ 已标记绑卡成功' : '❌ 已标记绑卡失败', 'success');
+      showToast(success ? '已标记绑卡成功' : '已标记绑卡失败', 'success');
       await loadAccounts(); // 刷新列表
     } else {
       showToast('标记失败: ' + result.error, 'error');
@@ -1284,10 +1186,12 @@ function selectAccountsForCleanup() {
       }
     }
     
-    // 检查积分是否完全耗尽（使用率100%）
+    // 检查积分使用情况（只针对非PRO账号）
     const used = account.usedPromptCredits || 0;
     const total = account.monthlyPromptCredits || 500;
-    if (total > 0 && used >= total) {
+    // 100积分/25积分账号：使用超过95%可清理
+    // PRO账号(500+)不删除
+    if (total <= 100 && used >= total * 0.95) {
       canCleanup = true;
     }
     
@@ -1303,37 +1207,41 @@ function selectAccountsForCleanup() {
   showToast(`已选择 ${count} 个可清理的账号`, 'warning');
 }
 
-// 全选所有账号
-function selectAllAccountsCheckbox() {
-  const checkboxes = document.querySelectorAll('#accountsList .account-checkbox');
-  checkboxes.forEach(checkbox => {
-    checkbox.checked = true;
-  });
-  updateSelectedBindCount();
-  showToast(`已全选 ${checkboxes.length} 个账号`, 'success');
-}
-
-// 反选
-function invertSelection() {
+// 统一选择操作
+function toggleSelection(mode) {
   const checkboxes = document.querySelectorAll('#accountsList .account-checkbox');
   let count = 0;
+  
   checkboxes.forEach(checkbox => {
-    checkbox.checked = !checkbox.checked;
-    if (checkbox.checked) count++;
+    switch (mode) {
+      case 'all':
+        checkbox.checked = true;
+        count++;
+        break;
+      case 'none':
+        checkbox.checked = false;
+        break;
+      case 'invert':
+        checkbox.checked = !checkbox.checked;
+        if (checkbox.checked) count++;
+        break;
+    }
   });
+  
   updateSelectedBindCount();
-  showToast(`反选完成，当前选中 ${count} 个账号`, 'success');
+  
+  const messages = {
+    all: `已全选 ${count} 个账号`,
+    none: '已取消所有选择',
+    invert: `反选完成，当前选中 ${count} 个账号`
+  };
+  showToast(messages[mode], mode === 'none' ? 'success' : 'success');
 }
 
-// 取消选择所有账号
-function deselectAllAccounts() {
-  const checkboxes = document.querySelectorAll('#accountsList .account-checkbox');
-  checkboxes.forEach(checkbox => {
-    checkbox.checked = false;
-  });
-  updateSelectedBindCount();
-  showToast('已取消所有选择', 'success');
-}
+// 兼容旧函数名
+function selectAllAccountsCheckbox() { toggleSelection('all'); }
+function invertSelection() { toggleSelection('invert'); }
+function deselectAllAccounts() { toggleSelection('none'); }
 
 // 切换更多操作菜单
 function toggleMoreActionsMenu() {
@@ -1370,57 +1278,11 @@ async function refreshSelectedAccounts() {
   let successCount = 0;
   let failCount = 0;
   
-  // 获取最新的账号列表
-  let accounts = await ipcRenderer.invoke('get-accounts');
-  let dataChanged = false;
-  
   for (const account of selectedAccounts) {
     try {
-      // 使用与单独刷新相同的IPC调用
-      const result = await ipcRenderer.invoke('get-account-details', account.email, account.password);
-      if (result.success && result.data) {
-        const data = result.data;
-        const accountIndex = accounts.findIndex(acc => acc.email === account.email);
-        
-        if (accountIndex !== -1) {
-          // 根据积分限额判断账号类型
-          let accountType = 'Free';
-          let cardBound = undefined;
-          
-          if (data.monthlyPromptCredits >= 500) {
-            accountType = 'PRO';
-            cardBound = true;
-          } else if (data.monthlyPromptCredits === 100) {
-            accountType = 'Trial';
-          } else if (data.monthlyPromptCredits === 25) {
-            accountType = 'Free';
-          }
-          
-          // 更新账号信息
-          const updatedAccount = {
-            ...accounts[accountIndex],
-            accountType: accountType,
-            isPro: data.isPro,
-            usedPromptCredits: data.usedPromptCredits,
-            monthlyPromptCredits: data.monthlyPromptCredits,
-            usedFlowCredits: data.usedFlowCredits,
-            monthlyFlowCredits: data.monthlyFlowCredits,
-            usedPoints: data.usedPoints,
-            maxPoints: data.maxPoints,
-            userId: data.userId,
-            name: data.name
-          };
-          
-          // 只在500积分时更新绑卡状态
-          if (cardBound !== undefined) {
-            updatedAccount.cardBound = cardBound;
-            updatedAccount.needsManualBinding = false;
-          }
-          
-          accounts[accountIndex] = updatedAccount;
-          dataChanged = true;
-        }
-        
+      // 使用统一的刷新接口，后端会处理所有逻辑
+      const result = await ipcRenderer.invoke('refresh-account-credits', account.email);
+      if (result.success) {
         successCount++;
         logger.success(`${account.email} 刷新成功`);
       } else {
@@ -1430,16 +1292,6 @@ async function refreshSelectedAccounts() {
     } catch (error) {
       failCount++;
       logger.error(`${account.email} 刷新异常: ${error.message}`);
-    }
-  }
-  
-  // 如果有数据变化，保存到文件
-  if (dataChanged) {
-    try {
-      await ipcRenderer.invoke('save-accounts', accounts);
-      logger.success('账号数据已保存');
-    } catch (error) {
-      logger.error(`保存账号数据失败: ${error.message}`);
     }
   }
   
@@ -1588,7 +1440,7 @@ function addBindingLog(message, email = null) {
     color = '#ff3b30';
   } else if (message.includes('警告') || message.includes('注意') || message.includes('超时')) {
     color = '#ff9500';
-  } else if (message.includes('📧') || message.includes('🚀') || message.includes('💳')) {
+  } else if (message.includes('邮箱') || message.includes('开始') || message.includes('卡')) {
     color = '#007aff';
   }
   
@@ -1602,34 +1454,110 @@ function addBindingLog(message, email = null) {
   logEntry.scrollIntoView({ behavior: 'auto', block: 'end' });
 }
 
-// 全局变量：当前正在处理的账号
-let currentBindingAccount = { email: '', password: '' };
+// 全局变量：待确认的账号列表（支持批量绑卡）
+let pendingBindingAccounts = [];
 
-// 更新当前绑卡账号
+// 更新当前绑卡账号（添加到待确认列表）
 function updateCurrentBindingAccount(email, password) {
-  currentBindingAccount = { email, password };
+  // 检查是否已存在
+  const exists = pendingBindingAccounts.find(acc => acc.email === email);
+  if (!exists) {
+    pendingBindingAccounts.push({ email, password, selectedCardId: 'auto' });
+  }
+  // 刷新待确认列表UI
+  renderPendingAccounts();
 }
 
-// 确认当前账号绑卡成功
-function confirmCurrentBindSuccess() {
-  if (!currentBindingAccount.email) {
-    showAlertDialog('提示', '没有正在处理的账号', 'warning');
+// 渲染待确认账号列表
+function renderPendingAccounts() {
+  const section = document.getElementById('pendingAccountsSection');
+  const list = document.getElementById('pendingAccountsList');
+  const countSpan = document.getElementById('pendingAccountsCount');
+  
+  if (!section || !list) return;
+  
+  if (pendingBindingAccounts.length === 0) {
+    section.style.display = 'none';
     return;
   }
-  confirmBindSuccess(currentBindingAccount.email);
+  
+  section.style.display = 'block';
+  countSpan.textContent = pendingBindingAccounts.length;
+  
+  // 为每个账号注册选择器配置
+  pendingBindingAccounts.forEach(acc => {
+    const key = `pending_${acc.email.replace(/[^a-zA-Z0-9]/g, '_')}`;
+    cardSelectors[key] = {
+      dropdownId: `pendingDrop_${key}`,
+      buttonId: `pendingBtn_${key}`,
+      selectedId: acc.selectedCardId || 'auto'
+    };
+  });
+  
+  list.innerHTML = pendingBindingAccounts.map((acc) => {
+    const key = `pending_${acc.email.replace(/[^a-zA-Z0-9]/g, '_')}`;
+    const selectedText = acc.selectedCardId && acc.selectedCardId !== 'auto' ? acc.selectedCardId.substring(0, 8) + '****' : '选择虚拟卡';
+    return `
+    <div style="display:flex; align-items:center; justify-content:space-between; padding:10px 12px; border-bottom:1px solid #e5e5ea; gap:8px;" data-email="${acc.email}">
+      <span style="font-size:12px; color:#1d1d1f; flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;" title="${acc.email}">${acc.email}</span>
+      <div style="display:flex; gap:6px; align-items:center; flex-shrink:0;">
+        <div class="card-selector-wrapper" style="position:relative;">
+          <button id="pendingBtn_${key}" class="compact-btn btn-secondary" onclick="toggleCardSelectorGeneric('${key}')" style="font-size:11px; padding:4px 8px;">${selectedText} ▾</button>
+          <div id="pendingDrop_${key}" class="card-selector-dropdown" style="display:none; position:absolute; top:100%; right:0; min-width:280px;"></div>
+        </div>
+        <button onclick="confirmBindSuccessForAccount('${acc.email}')" style="background:#34c759; color:white; border:none; padding:4px 10px; border-radius:4px; cursor:pointer; font-size:11px; font-weight:600;">成功</button>
+        <button onclick="retryBindingForAccount('${acc.email}', '${acc.password}')" style="background:#007aff; color:white; border:none; padding:4px 10px; border-radius:4px; cursor:pointer; font-size:11px; font-weight:600;">重试</button>
+      </div>
+    </div>`;
+  }).join('');
 }
 
-// 重试当前账号绑卡
-function retryCurrentBinding() {
-  if (!currentBindingAccount.email) {
-    showAlertDialog('提示', '没有正在处理的账号', 'warning');
-    return;
+// 获取待确认账号选择的卡ID
+function getPendingCardId(email) {
+  const key = `pending_${email.replace(/[^a-zA-Z0-9]/g, '_')}`;
+  return cardSelectors[key] ? cardSelectors[key].selectedId : 'auto';
+}
+
+// 确认指定账号绑卡成功
+async function confirmBindSuccessForAccount(email) {
+  await confirmBindSuccess(email);
+  // 从待确认列表中移除
+  pendingBindingAccounts = pendingBindingAccounts.filter(acc => acc.email !== email);
+  renderPendingAccounts();
+}
+
+// 重试指定账号绑卡（重新生成绑卡链接）
+async function retryBindingForAccount(email, password) {
+  const cardId = getPendingCardId(email);
+  
+  try {
+    showToast('正在重新获取绑卡链接...', 'info');
+    
+    // 使用 API 绑卡方式重新绑卡（会重新获取支付链接）
+    const result = await ipcRenderer.invoke('api-bind-single-account', { 
+      email, 
+      password, 
+      selectedCardId: cardId 
+    });
+    
+    if (result && result.success) {
+      // 重试成功，从列表移除
+      pendingBindingAccounts = pendingBindingAccounts.filter(a => a.email !== email);
+      renderPendingAccounts();
+      await loadAccounts();
+      showToast('绑卡成功', 'success');
+    } else if (result && result.pending) {
+      showToast('已提交，等待确认', 'info');
+    } else {
+      showToast('绑卡失败: ' + (result?.error || '未知错误'), 'error');
+    }
+  } catch (error) {
+    showToast('重新绑卡异常: ' + error.message, 'error');
   }
-  retryBinding(currentBindingAccount.email, currentBindingAccount.password);
 }
 
-// 开始批量绑卡
-async function startBatchBinding() {
+// 开始批量绑卡（API方式）
+async function startApiBatchBinding() {
   const selectedAccounts = getSelectedAccounts();
   
   if (selectedAccounts.length === 0) {
@@ -1653,43 +1581,115 @@ async function startBatchBinding() {
         const selectedCard = result.cards.find(c => c.id === selectedCardId);
         if (selectedCard && selectedCard.type === 'full') {
           showConfirmDialog(
-            '⚠️ 风险提示',
-            `你选择了完整卡进行批量绑卡（${accounts.length}个账号）。\n\n使用同一张完整卡绑定多个账号可能导致：\n• 被Stripe风控系统检测\n• 所有账号被封禁\n• 虚拟卡被拉黑\n\n建议：\n• 使用BIN卡头（每次自动生成不同卡号）\n• 或者每次只绑定1个账号\n\n确定要继续使用完整卡批量绑卡吗？`,
-            () => {
-              // 确认后继续执行绑卡
-              executeBatchBinding(accounts, selectedCardId);
-            },
-            async () => {
-              logger.warning('用户取消了批量绑卡操作');
-            }
+            '风险提示',
+            `你选择了完整卡进行批量绑卡（${accounts.length}个账号）。\n\n使用同一张完整卡绑定多个账号可能导致风控。\n\n确定要继续吗？`,
+            () => executeApiBatchBinding(accounts, selectedCardId),
+            () => logger.warning('用户取消了API批量绑卡操作')
           );
-          return; // 等待用户确认
+          return;
         }
       }
     } catch (error) {
-      // 检查虚拟卡类型失败，静默处理
+      // 静默处理
     }
   }
   
-  // 直接执行绑卡
-  executeBatchBinding(accounts, selectedCardId);
+  executeApiBatchBinding(accounts, selectedCardId);
 }
 
-// 执行批量绑卡
-async function executeBatchBinding(accounts, selectedCardId) {
-  // 显示绑卡日志窗口
+// 执行 API 批量绑卡
+async function executeApiBatchBinding(accounts, selectedCardId) {
   showBindingLog();
   
   try {
-    const result = await ipcRenderer.invoke('batch-bind-cards', { accounts, selectedCardId });
+    const result = await ipcRenderer.invoke('batch-api-bind-cards', { 
+      accounts, 
+      selectedCardId
+    });
     
-    if (result && result.successCount > 0) {
-      
-      // 刷新账号列表
+    if (result && (result.successCount > 0 || result.pendingCount > 0)) {
       await loadAccounts();
     }
   } catch (error) {
-    showToast('批量绑卡异常: ' + error.message, 'error');
+    showToast('API批量绑卡异常: ' + error.message, 'error');
+  }
+}
+
+// 单个账号 API 绑卡
+async function apiBindSingleAccount(email, password) {
+  showBindingLog();
+  
+  const selectedCardId = getSelectedCardId();
+  
+  try {
+    const result = await ipcRenderer.invoke('api-bind-card', { email, password, selectedCardId });
+    
+    if (result && result.success) {
+      await loadAccounts();
+    }
+  } catch (error) {
+    showToast('API绑卡异常: ' + error.message, 'error');
+  }
+}
+
+// 获取选中账号的绑卡链接
+async function getPaymentLinkForSelected() {
+  const selectedAccounts = getSelectedAccounts();
+  
+  if (selectedAccounts.length === 0) {
+    showToast('请先选择要获取绑卡链接的账号', 'warning');
+    return;
+  }
+  
+  if (selectedAccounts.length === 1) {
+    // 单个账号直接获取
+    await getPaymentLinkOnly(selectedAccounts[0].email, selectedAccounts[0].password);
+  } else {
+    // 多个账号显示列表
+    showToast(`正在获取 ${selectedAccounts.length} 个账号的绑卡链接...`, 'info');
+    
+    let successCount = 0;
+    const links = [];
+    
+    for (const account of selectedAccounts) {
+      try {
+        const result = await ipcRenderer.invoke('get-payment-link', { email: account.email, password: account.password });
+        if (result && result.success && result.paymentLink) {
+          successCount++;
+          links.push(`${account.email}: ${result.paymentLink}`);
+        }
+      } catch (error) {
+        // 忽略单个错误
+      }
+    }
+    
+    if (links.length > 0) {
+      // 复制所有链接到剪贴板
+      await navigator.clipboard.writeText(links.join('\n'));
+      showToast(`已复制 ${successCount} 个绑卡链接到剪贴板`, 'success');
+    } else {
+      showToast('获取绑卡链接失败', 'error');
+    }
+  }
+}
+
+// 仅获取支付链接（不打开浏览器）
+async function getPaymentLinkOnly(email, password) {
+  try {
+    const result = await ipcRenderer.invoke('get-payment-link', { email, password });
+    
+    if (result && result.success && result.paymentLink) {
+      // 复制到剪贴板
+      await navigator.clipboard.writeText(result.paymentLink);
+      showToast('支付链接已复制到剪贴板', 'success');
+      return result.paymentLink;
+    } else {
+      showToast('获取支付链接失败: ' + (result.error || '未知错误'), 'error');
+      return null;
+    }
+  } catch (error) {
+    showToast('获取支付链接异常: ' + error.message, 'error');
+    return null;
   }
 }
 
@@ -1928,13 +1928,13 @@ function addCancelLog(message, type = 'info') {
   }
   
   let color = '#1d1d1f';
-  if (type === 'success' || message.includes('成功') || message.includes('完成') || message.includes('✅')) {
+  if (type === 'success' || message.includes('成功') || message.includes('完成')) {
     color = '#34c759';
-  } else if (type === 'error' || message.includes('失败') || message.includes('错误') || message.includes('异常') || message.includes('❌')) {
+  } else if (type === 'error' || message.includes('失败') || message.includes('错误') || message.includes('异常')) {
     color = '#ff3b30';
-  } else if (type === 'warning' || message.includes('警告') || message.includes('注意') || message.includes('⚠️')) {
+  } else if (type === 'warning' || message.includes('警告') || message.includes('注意')) {
     color = '#ff9500';
-  } else if (type === 'info' || message.includes('开始') || message.includes('正在') || message.includes('🚀') || message.includes('📋')) {
+  } else if (type === 'info' || message.includes('开始') || message.includes('正在')) {
     color = '#007aff';
   }
   
@@ -2064,6 +2064,7 @@ const accountsModule = {
   loadAccounts,
   setCurrentEmailCache,
   renderAccounts,
+  filterAccountsByEmail,
   deleteAccountFromTable,
   updateAccountStats,
   showAddAccountForm,
@@ -2078,7 +2079,6 @@ const accountsModule = {
   markCardBound,
   toggleAddAccountMenu,
   selectUnboundAccounts,
-  startBatchBinding,
   retryBinding,
   getAccountDetails,
   toggleActionMenu,
@@ -2104,17 +2104,33 @@ const accountsModule = {
   deleteSelectedAccounts,
   toggleCardSelector,
   toggleRetryCardSelector,
+  toggleCardSelectorGeneric,
   getSelectedCardId,
   getRetrySelectedCardId,
+  getPendingCardId,
   hideBindingLog,
-  confirmCurrentBindSuccess,
-  retryCurrentBinding,
+  renderPendingAccounts,
+  confirmBindSuccessForAccount,
+  retryBindingForAccount,
   startBatchCancel,
   showCancelLog,
   hideCancelLog,
   addCancelLog,
   updateCancelProgress,
-  cancelCancelOperation
+  cancelCancelOperation,
+  showImportByTokenForm,
+  hideImportByTokenForm,
+  importAccountsByToken,
+  refreshAndReloadDetail,
+  pinAccount,
+  // 绑卡功能
+  startApiBatchBinding,
+  executeApiBatchBinding,
+  apiBindSingleAccount,
+  getPaymentLinkOnly,
+  getPaymentLinkForSelected,
+  showBindingLog,
+  getSelectedCardId
 };
 
 Object.assign(window, accountsModule);

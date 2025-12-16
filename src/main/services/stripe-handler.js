@@ -21,6 +21,17 @@ const failedAccountBrowsers = new Map(); // key: email, value: { page, context, 
 // 虚拟卡文件路径（使用统一路径配置）
 const windsurfPaths = require('../../shared/config/windsurf-paths');
 const CARDS_FILE = path.join(windsurfPaths.getJsonDataDir(), 'virtual-cards.json');
+const SETTINGS_FILE = path.join(windsurfPaths.getJsonDataDir(), 'settings.json');
+
+// 读取设置
+async function getSettings() {
+  try {
+    const data = await fs.readFile(SETTINGS_FILE, 'utf-8');
+    return JSON.parse(data);
+  } catch {
+    return {};
+  }
+}
 
 /**
  * 根据ID选择指定的虚拟卡
@@ -270,144 +281,263 @@ async function startAutoDetection(email, page, browser, cardId = null, cardInfo 
 function initStripeHandlers(win) {
   mainWindow = win;
   
-  // 批量绑卡
-  ipcMain.handle('batch-bind-cards', async (event, { accounts, selectedCardId }) => {
+  // 获取支付链接（仅获取链接，不打开浏览器）
+  ipcMain.handle('get-payment-link', async (event, { email, password }) => {
+    const { getPaymentLink } = require('./stripe-api');
+    return await getPaymentLink(email, password);
+  });
+  
+  // API 绑卡：获取链接 + 打开浏览器 + 自动填写表单
+  ipcMain.handle('api-bind-card', async (event, { email, password, selectedCardId }) => {
+    try {
+      bindLogger.info(`开始: ${email}`);
+      
+      // 选择虚拟卡
+      const cardData = selectedCardId && selectedCardId !== 'auto' 
+        ? await selectCardById(selectedCardId)
+        : await selectAvailableCard();
+      
+      let cardInfo = null;
+      if (cardData) {
+        cardInfo = generateCardInfo(cardData);
+        bindLogger.info(`已选择${cardData.type === 'full' ? '完整卡' : 'BIN卡头'}`);
+      } else {
+        bindLogger.warning('未选择虚拟卡，将打开页面手动填写');
+      }
+      
+      // 执行 API 绑卡
+      const { getPaymentLink } = require('./stripe-api');
+      const { connect } = require('puppeteer-real-browser');
+      const { bindCard } = require('./stripe-binder');
+      
+      // 1. 获取支付链接
+      const linkResult = await getPaymentLink(email, password);
+      if (!linkResult.success) {
+        return { success: false, error: linkResult.error };
+      }
+      
+      bindLogger.success('获取支付链接成功');
+      
+      // 2. 打开浏览器
+      bindLogger.info('启动浏览器...');
+      const settings = await getSettings();
+      const browserArgs = ['--disable-blink-features=AutomationControlled', '--window-size=800,1000'];
+      if (settings.incognitoMode !== false) browserArgs.push('--incognito');
+      const response = await connect({
+        headless: false,
+        fingerprint: true,
+        turnstile: false,
+        tf: false,
+        args: browserArgs,
+        defaultViewport: null  // 禁用固定viewport，让页面可以滚动
+      });
+      
+      const browser = response.browser;
+      const page = response.page;
+      
+      // 不设置setViewport，让页面可以正常滚动
+      await page.goto(linkResult.paymentLink, { waitUntil: 'networkidle2', timeout: 30000 });
+      await new Promise(resolve => setTimeout(resolve, 3000));
+      
+      bindLogger.success('已到达 Stripe 页面');
+      
+      // 4. 自动填写表单
+      if (cardInfo) {
+        bindLogger.info('开始自动填写表单...');
+        const bindResult = await bindCard(page, null, cardInfo);
+        
+        if (bindResult.pending) {
+          // 保存浏览器实例
+          failedAccountBrowsers.set(email, { page, browser, cardId: cardInfo.cardId, cardInfo });
+          
+          // 监听浏览器关闭
+          browser.on('disconnected', async () => {
+            if (failedAccountBrowsers.has(email)) {
+              await updateAccountBindStatus(email, false);
+              failedAccountBrowsers.delete(email);
+            }
+          });
+          
+          // 显示操作按钮
+          mainWindow.webContents.send('show-binding-actions', { email, password });
+          
+          // 启动后台检测
+          startAutoDetection(email, page, browser, cardInfo.cardId, cardInfo);
+          
+          return { success: false, pending: true };
+        }
+        
+        return bindResult;
+      }
+      
+      // 没有卡信息，保存浏览器实例让用户手动填写
+      failedAccountBrowsers.set(email, { page, browser });
+      mainWindow.webContents.send('show-binding-actions', { email, password });
+      
+      return { success: false, pending: true, paymentLink: linkResult.paymentLink };
+      
+    } catch (error) {
+      bindLogger.error('异常', error.message);
+      return { success: false, error: error.message };
+    }
+  });
+  
+  // 单个账号 API 绑卡（重试时复用批量绑卡逻辑）
+  ipcMain.handle('api-bind-single-account', async (event, { email, password, selectedCardId }) => {
+    // 先关闭之前的浏览器实例（如果有）
+    const savedBrowser = failedAccountBrowsers.get(email);
+    if (savedBrowser && savedBrowser.browser) {
+      try {
+        await savedBrowser.browser.close();
+      } catch (e) {}
+      failedAccountBrowsers.delete(email);
+    }
+    
+    // 复用批量绑卡的逻辑，传入单个账号
+    const result = await ipcRenderer_batchApiBindCards([{ email, password }], selectedCardId, 1);
+    return result.successCount > 0 ? { success: true } : { success: false, pending: result.pendingCount > 0, error: '绑卡失败' };
+  });
+  
+  // 内部绑卡函数（供批量绑卡和单个绑卡复用）
+  async function ipcRenderer_batchApiBindCards(accounts, selectedCardId, concurrent) {
+    const settings = await getSettings();
+    const CONCURRENT_COUNT = concurrent || settings.concurrent || 5;
     let successCount = 0;
     let failCount = 0;
     let pendingCount = 0;
+    let completedCount = 0;
     
-    
-    for (let i = 0; i < accounts.length; i++) {
-      const acc = accounts[i];
-      
-      // 发送进度
-      mainWindow.webContents.send('binding-progress', {
-        current: i + 1,
-        total: accounts.length
-      });
-      
-      // 发送到系统日志的函数（避免循环调用）
-      const systemLog = (msg) => {
-        bindLogger.info(msg);
+    // 单个账号绑卡任务
+    async function bindSingleAccount(acc, taskIndex) {
+      const taskLog = (type, msg, detail = '') => {
+        const prefix = `[任务${taskIndex}]`;
+        if (type === 'info') bindLogger.info(`${prefix} ${msg}`, detail);
+        else if (type === 'error') bindLogger.error(`${prefix} ${msg}`, detail);
+        else if (type === 'success') bindLogger.success(`${prefix} ${msg}`);
+        else if (type === 'progress') bindLogger.progress(`${prefix} ${msg}`);
       };
       
-      let browser, context, page;
-      
       try {
-        systemLog(`开始绑卡 [${i + 1}/${accounts.length}] ${acc.email}`);
+        taskLog('info', `开始绑卡 ${acc.email}`);
         
-        // 第一步：从虚拟卡库选卡
-        systemLog(`正在选择虚拟卡...`);
+        // 选择虚拟卡
         const cardData = selectedCardId && selectedCardId !== 'auto' 
           ? await selectCardById(selectedCardId)
           : await selectAvailableCard();
         
         if (!cardData) {
-          systemLog(`没有可用的虚拟卡，请先在"虚拟卡管理"中添加`);
-          failCount++;
-          continue;
+          taskLog('error', '没有可用的虚拟卡');
+          return { success: false, error: '没有可用的虚拟卡' };
         }
         
         const cardInfo = generateCardInfo(cardData);
-        systemLog(`已选择${cardData.type === 'full' ? '完整卡' : 'BIN卡头'}`);
         
-        // 第二步：登录到 Stripe 页面
-        const loginResult = await loginToStripePage(acc.email, acc.password);
-        page = loginResult.page;
-        context = loginResult.context;
-        browser = loginResult.browser;
+        // 获取支付链接
+        const { getPaymentLink } = require('./stripe-api');
+        const linkResult = await getPaymentLink(acc.email, acc.password);
         
-        // 第三步：执行绑卡（统一管理，所有日志自动转发到专用窗口）
-        const result = await bindCard(page, null, cardInfo);
+        if (!linkResult.success) {
+          taskLog('error', '获取链接失败', linkResult.error);
+          await updateAccountBindStatus(acc.email, false);
+          return { success: false, error: linkResult.error };
+        }
         
-        if (result.pending) {
-          // 提交完成，等待用户确认
-          pendingCount++;
-          systemLog(`绑卡已提交，等待用户确认`);
-          bindLogger.info(`请在浏览器中查看结果，然后点击下方按钮`);
+        // 打开浏览器
+        const { connect } = require('puppeteer-real-browser');
+        const settings = await getSettings();
+        const browserArgs = ['--disable-blink-features=AutomationControlled', '--window-size=800,1000'];
+        if (settings.incognitoMode !== false) browserArgs.push('--incognito');
+        const response = await connect({
+          headless: false,
+          fingerprint: true,
+          turnstile: false,
+          tf: false,
+          args: browserArgs,
+          defaultViewport: null  // 禁用固定viewport，让页面可以滚动
+        });
+        
+        const browser = response.browser;
+        const page = response.page;
+        
+        // 不设置setViewport，让页面可以正常滚动
+        await page.goto(linkResult.paymentLink, { waitUntil: 'networkidle2', timeout: 30000 });
+        await new Promise(resolve => setTimeout(resolve, 3000));
+        
+        // 自动填写表单
+        const { bindCard } = require('./stripe-binder');
+        const bindResult = await bindCard(page, null, cardInfo, taskIndex);
+        
+        if (bindResult.pending) {
+          failedAccountBrowsers.set(acc.email, { page, browser, cardId: cardInfo.cardId, cardInfo });
           
-          // 保存浏览器实例、卡ID和卡信息
-          failedAccountBrowsers.set(acc.email, { page, context, browser, cardId: cardInfo.cardId, cardInfo });
-          
-          // 监听浏览器关闭事件，自动标记为绑卡失败
           browser.on('disconnected', async () => {
             if (failedAccountBrowsers.has(acc.email)) {
-              // 浏览器被关闭，标记为绑卡失败
               await updateAccountBindStatus(acc.email, false);
               failedAccountBrowsers.delete(acc.email);
-              systemLog(`浏览器已关闭，自动标记为绑卡失败`);
             }
           });
           
-          // 发送事件显示操作按钮
-          mainWindow.webContents.send('show-binding-actions', {
-            email: acc.email,
-            password: acc.password
-          });
-          
-          // 启动后台检测（不阻塞）
+          mainWindow.webContents.send('show-binding-actions', { email: acc.email, password: acc.password });
           startAutoDetection(acc.email, page, browser, cardInfo.cardId, cardInfo);
-          
-        } else if (result.error) {
-          // 提交失败
-          failCount++;
-          systemLog(`绑卡失败: ${result.error}`);
-          bindLogger.warning(`浏览器保持打开状态，可以重新绑卡`);
-          
-          // 保存浏览器实例
-          failedAccountBrowsers.set(acc.email, { page, context, browser });
-          
-          // 更新按钮对应的账号
-          mainWindow.webContents.send('show-binding-actions', {
-            email: acc.email,
-            password: acc.password
-          });
-          
+          return { success: false, pending: true };
+        } else if (bindResult.error) {
+          failedAccountBrowsers.set(acc.email, { page, browser });
+          mainWindow.webContents.send('show-binding-actions', { email: acc.email, password: acc.password });
           await updateAccountBindStatus(acc.email, false);
+          return { success: false, error: bindResult.error };
         }
+        
+        return { success: true };
         
       } catch (error) {
-        failCount++;
-        systemLog(`绑卡异常: ${error.message}`);
-        
-        // 如果浏览器已打开，保存实例供重试
-        if (browser && page) {
-          bindLogger.warning(`浏览器保持打开状态，可以重新绑卡`);
-          failedAccountBrowsers.set(acc.email, { page, context, browser });
-          
-          // 更新按钮对应的账号
-          mainWindow.webContents.send('show-binding-actions', {
-            email: acc.email,
-            password: acc.password
-          });
-        }
-        
+        taskLog('error', '异常', error.message);
         await updateAccountBindStatus(acc.email, false);
+        return { success: false, error: error.message };
       }
     }
     
-    let summaryMsg = '';
-    if (successCount > 0 || failCount > 0 || pendingCount > 0) {
-      summaryMsg += `✅ 批量绑卡完成！成功 ${successCount} 个，失败 ${failCount} 个`;
-      if (pendingCount > 0) {
-        summaryMsg += `，待确认 ${pendingCount} 个`;
+    // 分批并行处理
+    for (let i = 0; i < accounts.length; i += CONCURRENT_COUNT) {
+      const batch = [];
+      const batchSize = Math.min(CONCURRENT_COUNT, accounts.length - i);
+      
+      for (let j = 0; j < batchSize; j++) {
+        const taskIndex = i + j + 1;
+        const acc = accounts[i + j];
+        
+        const task = bindSingleAccount(acc, taskIndex).then(result => {
+          completedCount++;
+          if (result.success) successCount++;
+          else if (result.pending) pendingCount++;
+          else failCount++;
+          
+          mainWindow.webContents.send('binding-progress', {
+            current: completedCount,
+            total: accounts.length
+          });
+          
+          return result;
+        });
+        
+        batch.push(task);
       }
-    } else {
-      summaryMsg += `⚠️ 批量绑卡完成，但没有成功的账号`;
+      
+      await Promise.all(batch);
     }
     
-    mainWindow.webContents.send('binding-log', {
-      message: summaryMsg
-    });
+    bindLogger.success(`批量绑卡完成！成功 ${successCount} 个，失败 ${failCount} 个，待确认 ${pendingCount} 个`);
+    bindLogger.info('后台自动检测已启动...');
     
-    // 通知前端刷新数据
-    if (successCount > 0 || pendingCount > 0) {
-      mainWindow.webContents.send('refresh-data');
-    }
+    mainWindow.webContents.send('refresh-data');
     
     return { successCount, failCount, pendingCount };
-  });
+  }
   
+  // 批量 API 绑卡（支持并行）- 复用内部函数
+  ipcMain.handle('batch-api-bind-cards', async (event, { accounts, selectedCardId, concurrent }) => {
+    return await ipcRenderer_batchApiBindCards(accounts, selectedCardId, concurrent);
+  });
+
   // 用户确认绑卡成功
   ipcMain.handle('confirm-bind-success', async (event, { email }) => {
     
@@ -465,122 +595,6 @@ function initStripeHandlers(win) {
     }
   });
   
-  // 重试单个账号绑卡（使用保存的浏览器实例）
-  ipcMain.handle('retry-bind-card', async (event, { email, password, selectedCardId }) => {
-    
-    const systemLog = (msg) => {
-      // 发送到系统日志
-      bindLogger.info(msg);
-    };
-    
-    try {
-      // 检查是否有保存的浏览器实例
-      const savedBrowser = failedAccountBrowsers.get(email);
-      
-      if (!savedBrowser) {
-        systemLog('未找到浏览器实例，请重新开始绑卡流程');
-        return { success: false, error: '未找到浏览器实例' };
-      }
-      
-      const { page, context, browser } = savedBrowser;
-      
-      // 如果指定了新的卡，生成新的卡信息
-      let newCardInfo = null;
-      if (selectedCardId && selectedCardId !== 'auto') {
-        const cardData = await selectCardById(selectedCardId);
-        if (cardData) {
-          newCardInfo = generateCardInfo(cardData);
-          bindLogger.info(`使用新选择的卡: ${newCardInfo.cardNumber.substring(0, 8)}****`);
-        }
-      } else if (selectedCardId === 'auto') {
-        const cardData = await selectAvailableCard();
-        if (cardData) {
-          newCardInfo = generateCardInfo(cardData);
-          bindLogger.info(`自动选择卡: ${newCardInfo.cardNumber.substring(0, 8)}****`);
-        }
-      }
-      
-      // 执行重新绑卡（使用统一日志管理）
-      const result = await retryBind(page, newCardInfo);
-      
-      if (result.success) {
-        // 重新绑卡成功，关闭浏览器
-        systemLog('重试绑卡成功');
-        
-        try {
-          await browser.close();
-        } catch (e) {
-          // 忽略关闭错误
-        }
-        
-        // 从Map中移除
-        failedAccountBrowsers.delete(email);
-        
-        // 更新账号绑卡状态
-        await updateAccountBindStatus(email, true);
-        
-        // 通知前端刷新数据（账号列表和虚拟卡列表）
-        mainWindow.webContents.send('refresh-data');
-        
-        return { success: true };
-      } else if (result.pending) {
-        // 重新提交，等待确认
-        bindLogger.info(`💡 请在浏览器中查看结果，然后点击下方按钮`);
-        
-        // 更新按钮对应的账号
-        mainWindow.webContents.send('show-binding-actions', {
-          email: email,
-          password: password
-        });
-        
-        // 监听浏览器关闭事件，自动标记为绑卡失败
-        browser.on('disconnected', async () => {
-          if (failedAccountBrowsers.has(email)) {
-            // 浏览器被关闭，标记为绑卡失败
-            await updateAccountBindStatus(email, false);
-            failedAccountBrowsers.delete(email);
-            systemLog(`浏览器已关闭，自动标记为绑卡失败`);
-          }
-        });
-        
-        // 启动后台检测
-        startAutoDetection(email, page, browser);
-        
-        return { success: false, pending: true };
-      } else {
-        // 重新绑卡失败，保持浏览器打开
-        systemLog(`重试绑卡失败: ${result.error || '未知错误'}`);
-        bindLogger.warning(`浏览器保持打开状态，可以再次重试`);
-        
-        // 更新按钮对应的账号
-        mainWindow.webContents.send('show-binding-actions', {
-          email: email,
-          password: password
-        });
-        
-        await updateAccountBindStatus(email, false);
-        
-        return { success: false, error: result.error };
-      }
-      
-    } catch (error) {
-      // 友好的错误提示
-      let friendlyMessage = error.message;
-      if (error.message.includes('has been closed')) {
-        friendlyMessage = '浏览器窗口被关闭';
-      } else if (error.message.includes('Timeout')) {
-        friendlyMessage = '操作超时';
-      } else if (error.message.includes('net::ERR')) {
-        friendlyMessage = '网络连接失败';
-      }
-      
-      systemLog(`重试绑卡异常: ${friendlyMessage}`);
-      
-      await updateAccountBindStatus(email, false);
-      
-      return { success: false, error: error.message };
-    }
-  });
 }
 
 /**
@@ -604,5 +618,4 @@ async function updateAccountBindStatus(email, success) {
     logger.error('更新虚拟卡绑定次数失败', error.message);
   }
 }
-
 module.exports = { initStripeHandlers };

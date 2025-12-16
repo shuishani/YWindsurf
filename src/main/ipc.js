@@ -19,15 +19,12 @@ const { createTaggedLogger } = require('./utils/logger');
 function registerAllIPC(app, mainWindow) {
   // 统一路径配置 - 避免重复引用
   const windsurfPaths = require('../shared/config/windsurf-paths');
-  const JSON_DATA_DIR = windsurfPaths.getJsonDataDir();
-  const WINDSURF_DATA_DIR = windsurfPaths.getDataDir();
-  const WINDSURF_CACHE_DIR = windsurfPaths.getCacheDir();
   
-  // 常用文件路径
-  const ACCOUNTS_FILE = path.join(JSON_DATA_DIR, 'accounts.json');
-  const CARDS_FILE = path.join(JSON_DATA_DIR, 'virtual-cards.json');
-  const SETTINGS_FILE = path.join(JSON_DATA_DIR, 'settings.json');
-  const CURRENT_LOGIN_FILE = path.join(WINDSURF_DATA_DIR, 'current_login.json');
+  // 动态获取路径的函数（路径可能在运行时改变）
+  const getAccountsFile = () => path.join(windsurfPaths.getJsonDataDir(), 'accounts.json');
+  const getCardsFile = () => path.join(windsurfPaths.getJsonDataDir(), 'virtual-cards.json');
+  const getSettingsFile = () => path.join(windsurfPaths.getJsonDataDir(), 'settings.json');
+  const getCurrentLoginFile = () => path.join(windsurfPaths.getDataDir(), 'current_login.json');
   
   // 创建空标签的日志实例
   const systemLogger = createTaggedLogger('');
@@ -45,6 +42,13 @@ function registerAllIPC(app, mainWindow) {
   
   // 注册Stripe绑卡IPC
   initStripeHandlers(mainWindow);
+  
+  // 监听前端刷新数据请求，广播给所有渲染进程
+  ipcMain.on('refresh-data', () => {
+    if (mainWindow) {
+      mainWindow.webContents.send('refresh-data');
+    }
+  });
 
   // 注册基础IPC处理器（虚拟卡管理在后面）
 
@@ -53,7 +57,7 @@ function registerAllIPC(app, mainWindow) {
   // 读取设置文件
   async function getSettings() {
     try {
-      const data = await fs.readFile(SETTINGS_FILE, 'utf-8');
+      const data = await fs.readFile(getSettingsFile(), 'utf-8');
       return JSON.parse(data);
     } catch (error) {
       // 返回默认设置
@@ -61,7 +65,7 @@ function registerAllIPC(app, mainWindow) {
         language: 'zh-CN',
         windsurfPath: '',
         useCustomWindsurfPath: false,
-        dataPath: JSON_DATA_DIR,
+        dataPath: windsurfPaths.getJsonDataDir(),
         useCustomDataPath: false,
         emailDomains: [],
         emailConfig: {
@@ -76,7 +80,7 @@ function registerAllIPC(app, mainWindow) {
 
   // 保存设置文件
   async function saveSettings(settings) {
-    await fs.writeFile(SETTINGS_FILE, JSON.stringify(settings, null, 2), 'utf-8');
+    await fs.writeFile(getSettingsFile(), JSON.stringify(settings, null, 2), 'utf-8');
   }
 
   // 语言设置
@@ -103,7 +107,7 @@ function registerAllIPC(app, mainWindow) {
   // ==================== 账号管理 ====================
   ipcMain.handle('get-accounts', async () => {
     try {
-      const data = await fs.readFile(ACCOUNTS_FILE, 'utf-8');
+      const data = await fs.readFile(getAccountsFile(), 'utf-8');
       const accounts = JSON.parse(data);
       return accounts;
     } catch (error) {
@@ -114,7 +118,7 @@ function registerAllIPC(app, mainWindow) {
 
   ipcMain.handle('save-accounts', async (event, accounts) => {
     try {
-      await fs.writeFile(ACCOUNTS_FILE, JSON.stringify(accounts, null, 2));
+      await fs.writeFile(getAccountsFile(), JSON.stringify(accounts, null, 2));
       return { success: true };
     } catch (error) {
       return { success: false, error: error.message };
@@ -125,7 +129,7 @@ function registerAllIPC(app, mainWindow) {
     try {
       let accounts = [];
       try {
-        const data = await fs.readFile(ACCOUNTS_FILE, 'utf-8');
+        const data = await fs.readFile(getAccountsFile(), 'utf-8');
         accounts = JSON.parse(data);
       } catch (error) {
         // 文件不存在，使用空数组
@@ -142,7 +146,7 @@ function registerAllIPC(app, mainWindow) {
       // 只有通过刷新操作才会设置真实的创建时间
       accounts.push(account);
       
-      await fs.writeFile(ACCOUNTS_FILE, JSON.stringify(accounts, null, 2));
+      await fs.writeFile(getAccountsFile(), JSON.stringify(accounts, null, 2));
       return { success: true, account };
     } catch (error) {
       return { success: false, error: error.message };
@@ -151,10 +155,33 @@ function registerAllIPC(app, mainWindow) {
 
   ipcMain.handle('delete-account', async (event, accountId) => {
     try {
-      const data = await fs.readFile(ACCOUNTS_FILE, 'utf-8');
+      const data = await fs.readFile(getAccountsFile(), 'utf-8');
       let accounts = JSON.parse(data);
       accounts = accounts.filter(acc => acc.id !== accountId);
-      await fs.writeFile(ACCOUNTS_FILE, JSON.stringify(accounts, null, 2));
+      await fs.writeFile(getAccountsFile(), JSON.stringify(accounts, null, 2));
+      return { success: true };
+    } catch (error) {
+      return { success: false, error: error.message };
+    }
+  });
+
+  // 置顶账号
+  ipcMain.handle('pin-account', async (event, accountId) => {
+    try {
+      const data = await fs.readFile(getAccountsFile(), 'utf-8');
+      let accounts = JSON.parse(data);
+      
+      // 找到要置顶的账号
+      const index = accounts.findIndex(acc => acc.id === accountId);
+      if (index === -1) {
+        return { success: false, error: '账号不存在' };
+      }
+      
+      // 将账号移到第一位
+      const [account] = accounts.splice(index, 1);
+      accounts.unshift(account);
+      
+      await fs.writeFile(getAccountsFile(), JSON.stringify(accounts, null, 2));
       return { success: true };
     } catch (error) {
       return { success: false, error: error.message };
@@ -164,7 +191,7 @@ function registerAllIPC(app, mainWindow) {
   // ==================== Windsurf管理 ====================
   ipcMain.handle('clear-windsurf', async () => {
     try {
-      const pathsToDelete = [WINDSURF_DATA_DIR, path.join(WINDSURF_CACHE_DIR, 'Cache')];
+      const pathsToDelete = [windsurfPaths.getDataDir(), path.join(windsurfPaths.getCacheDir(), 'Cache')];
       
       for (const dirPath of pathsToDelete) {
         try {
@@ -197,7 +224,7 @@ function registerAllIPC(app, mainWindow) {
       const switchResult = await switcher.switchAccountAdvanced(account.email, account.password);
       
       // 保存当前登录信息到Windsurf数据目录
-      await fs.writeFile(CURRENT_LOGIN_FILE, JSON.stringify(account, null, 2));
+      await fs.writeFile(getCurrentLoginFile(), JSON.stringify(account, null, 2));
       
       return { 
         success: true, 
@@ -297,7 +324,7 @@ function registerAllIPC(app, mainWindow) {
 
   ipcMain.handle('get-current-login', async () => {
     try {
-      const data = await fs.readFile(CURRENT_LOGIN_FILE, 'utf-8');
+      const data = await fs.readFile(getCurrentLoginFile(), 'utf-8');
       return JSON.parse(data);
     } catch (error) {
       return null;
@@ -370,7 +397,7 @@ function registerAllIPC(app, mainWindow) {
   // 更新所有账号的绑卡状态
   ipcMain.handle('update-all-binding-status', async () => {
     try {
-      const data = await fs.readFile(ACCOUNTS_FILE, 'utf-8');
+      const data = await fs.readFile(getAccountsFile(), 'utf-8');
       const accounts = JSON.parse(data);
       
       // 将所有 needsManualBinding 的账号标记为已绑卡（但需要验证积分）
@@ -387,7 +414,7 @@ function registerAllIPC(app, mainWindow) {
         return acc;
       });
       
-      await fs.writeFile(ACCOUNTS_FILE, JSON.stringify(updatedAccounts, null, 2));
+      await fs.writeFile(getAccountsFile(), JSON.stringify(updatedAccounts, null, 2));
       return { success: true };
     } catch (error) {
       systemLogger.error('更新绑卡状态失败', error.message);
@@ -603,7 +630,7 @@ function registerAllIPC(app, mainWindow) {
 
   ipcMain.handle('get-cards', async () => {
     try {
-      const data = await fs.readFile(CARDS_FILE, 'utf-8');
+      const data = await fs.readFile(getCardsFile(), 'utf-8');
       const cards = JSON.parse(data);
       return { success: true, cards: cards };
     } catch (error) {
@@ -614,7 +641,7 @@ function registerAllIPC(app, mainWindow) {
 
   ipcMain.handle('save-cards', async (event, cards) => {
     try {
-      await fs.writeFile(CARDS_FILE, JSON.stringify(cards, null, 2));
+      await fs.writeFile(getCardsFile(), JSON.stringify(cards, null, 2));
       return { success: true };
     } catch (error) {
       return { success: false, error: error.message };
@@ -622,65 +649,193 @@ function registerAllIPC(app, mainWindow) {
   });
 
   // 刷新单个账号的积分数据
+  // 文件操作锁，防止并发写入
+  let accountsFileLock = Promise.resolve();
+  
   ipcMain.handle('refresh-account-credits', async (event, email) => {
     try {
-      // 1. 读取账号列表
-      let accounts = [];
+      // 1. 先读取账号获取 refreshToken 和 password（不需要锁）
+      let accountData = null;
       try {
-        const data = await fs.readFile(ACCOUNTS_FILE, 'utf-8');
-        accounts = JSON.parse(data);
+        const fileData = await fs.readFile(getAccountsFile(), 'utf-8');
+        const accounts = JSON.parse(fileData);
+        accountData = accounts.find(acc => acc.email === email);
       } catch (e) {
         return { success: false, error: '读取账号列表失败' };
       }
       
-      // 2. 找到目标账号
-      const account = accounts.find(acc => acc.email === email);
-      if (!account) {
+      if (!accountData) {
         return { success: false, error: '账号不存在' };
       }
       
-      if (!account.password) {
-        return { success: false, error: '密码未保存，无法刷新' };
-      }
+      // 2. 调用 API 获取最新数据（耗时操作，不需要锁）
+      const { getAccountCredits, getAccountCreditsByRefreshToken } = require('../shared/lib/windsurf-api');
+      let creditsResult;
+      let newRefreshToken = null;
       
-      // 3. 使用公共函数获取积分信息
-      const { getAccountCredits } = require('../shared/lib/windsurf-api');
-      const creditsResult = await getAccountCredits(account.email, account.password);
+      if (accountData.refreshToken) {
+        creditsResult = await getAccountCreditsByRefreshToken(accountData.refreshToken);
+        if (creditsResult.success && creditsResult.newRefreshToken) {
+          newRefreshToken = creditsResult.newRefreshToken;
+        }
+        if (!creditsResult.success && accountData.password) {
+          creditsResult = await getAccountCredits(accountData.email, accountData.password);
+          if (creditsResult.success && creditsResult.refreshToken) {
+            newRefreshToken = creditsResult.refreshToken;
+          }
+        }
+      } else if (accountData.password) {
+        creditsResult = await getAccountCredits(accountData.email, accountData.password);
+        if (creditsResult.success && creditsResult.refreshToken) {
+          newRefreshToken = creditsResult.refreshToken;
+        }
+      } else {
+        return { success: false, error: '无密码或Token，无法刷新' };
+      }
       
       if (!creditsResult.success) {
         return { success: false, error: creditsResult.error };
       }
       
-      // 4. 更新账号数据
+      // 3. 使用锁来更新和保存文件（防止并发写入覆盖）
+      await (accountsFileLock = accountsFileLock.then(async () => {
+        // 重新读取最新的账号列表
+        let accounts = [];
+        try {
+          const fileData = await fs.readFile(getAccountsFile(), 'utf-8');
+          accounts = JSON.parse(fileData);
+        } catch (e) {
+          throw new Error('读取账号列表失败');
+        }
+        
+        // 找到并更新账号
+        const account = accounts.find(acc => acc.email === email);
+        if (!account) {
+          throw new Error('账号不存在');
+        }
+        
+        // 更新账号数据
+        const data = creditsResult.data;
+        account.usedPromptCredits = data.usedPromptCredits;
+        account.monthlyPromptCredits = data.monthlyPromptCredits;
+        account.usedFlowCredits = data.usedFlowCredits;
+        account.monthlyFlowCredits = data.monthlyFlowCredits;
+        account.accountType = data.accountType;
+        account.planType = data.planType;
+        account.createdAt = data.createdAt || account.createdAt;
+        account.expiresAt = data.expiresAt || account.expiresAt;
+        if (data.apiKey) {
+          account.apiKey = data.apiKey;
+        }
+        if (newRefreshToken) {
+          account.refreshToken = newRefreshToken;
+        }
+        
+        // 根据积分情况更新绑卡状态
+        if (account.monthlyPromptCredits >= 500) {
+          account.cardBound = true;
+        } else if (account.monthlyPromptCredits === 100) {
+          account.cardBound = true;
+        } else {
+          account.cardBound = false;
+        }
+        account.needsManualBinding = false;
+        
+        // 保存到文件
+        await fs.writeFile(getAccountsFile(), JSON.stringify(accounts, null, 2));
+      }));
+      
+      // 返回结果使用 creditsResult.data
       const data = creditsResult.data;
-      account.usedPromptCredits = data.usedPromptCredits;
-      account.monthlyPromptCredits = data.monthlyPromptCredits;
-      account.usedFlowCredits = data.usedFlowCredits;
-      account.monthlyFlowCredits = data.monthlyFlowCredits;
-      account.accountType = data.accountType;
-      account.createdAt = data.createdAt || account.createdAt;
-      account.expiresAt = data.expiresAt || account.expiresAt;
-      
-      // 6. 根据积分情况更新绑卡状态
-      // 如果积分小于500，说明没有成功绑卡（PRO账号应该有500积分）
-      if (account.monthlyPromptCredits < 500) {
-        account.cardBound = false;
-        account.needsManualBinding = false; // 清除手动绑定标记
-      }
-      
-      // 7. 保存到文件
-      await fs.writeFile(ACCOUNTS_FILE, JSON.stringify(accounts, null, 2));
-      
       return { 
         success: true,
         credits: {
-          usedPrompt: account.usedPromptCredits,
-          monthlyPrompt: account.monthlyPromptCredits,
-          usedFlow: account.usedFlowCredits,
-          monthlyFlow: account.monthlyFlowCredits
+          usedPrompt: data.usedPromptCredits,
+          monthlyPrompt: data.monthlyPromptCredits,
+          usedFlow: data.usedFlowCredits,
+          monthlyFlow: data.monthlyFlowCredits
         },
-        createdAt: account.createdAt,
-        expiresAt: account.expiresAt
+        createdAt: data.createdAt,
+        expiresAt: data.expiresAt
+      };
+    } catch (error) {
+      return { success: false, error: error.message };
+    }
+  });
+
+  // 通过 Refresh Token 导入账号
+  ipcMain.handle('import-account-by-token', async (event, refreshToken) => {
+    try {
+      const { getAccountCreditsByRefreshToken } = require('../shared/lib/windsurf-api');
+      const result = await getAccountCreditsByRefreshToken(refreshToken);
+      
+      if (!result.success) {
+        return { success: false, error: result.error };
+      }
+      
+      const data = result.data;
+      
+      // 检查账号是否已存在
+      let accounts = [];
+      try {
+        const fileData = await fs.readFile(getAccountsFile(), 'utf-8');
+        accounts = JSON.parse(fileData);
+      } catch (e) {
+        // 文件不存在，使用空数组
+      }
+      
+      const existingAccount = accounts.find(acc => acc.email === data.email);
+      if (existingAccount) {
+        // 更新现有账号的 refreshToken
+        existingAccount.refreshToken = result.newRefreshToken || refreshToken;
+        existingAccount.usedPromptCredits = data.usedPromptCredits;
+        existingAccount.monthlyPromptCredits = data.monthlyPromptCredits;
+        existingAccount.usedFlowCredits = data.usedFlowCredits;
+        existingAccount.monthlyFlowCredits = data.monthlyFlowCredits;
+        existingAccount.accountType = data.accountType;
+        existingAccount.planType = data.planType;  // 账号类型
+        existingAccount.createdAt = data.createdAt || existingAccount.createdAt;
+        existingAccount.expiresAt = data.expiresAt || existingAccount.expiresAt;
+        
+        await fs.writeFile(getAccountsFile(), JSON.stringify(accounts, null, 2));
+        
+        return { 
+          success: true, 
+          message: '账号已更新',
+          account: existingAccount,
+          isNew: false
+        };
+      }
+      
+      // 创建新账号
+      const newAccount = {
+        id: Date.now().toString() + Math.random().toString(36).substr(2, 9),
+        email: data.email,
+        refreshToken: result.newRefreshToken || refreshToken,
+        firstName: data.name?.split(' ')[0] || '',
+        lastName: data.name?.split(' ')[1] || '',
+        usedPromptCredits: data.usedPromptCredits,
+        monthlyPromptCredits: data.monthlyPromptCredits,
+        usedFlowCredits: data.usedFlowCredits,
+        monthlyFlowCredits: data.monthlyFlowCredits,
+        accountType: data.accountType,
+        planType: data.planType,  // 账号类型
+        isPro: data.isPro,
+        cardBound: data.monthlyPromptCredits >= 100,
+        createdAt: data.createdAt || new Date().toISOString(),
+        expiresAt: data.expiresAt
+      };
+      
+      accounts.push(newAccount);
+      await fs.writeFile(getAccountsFile(), JSON.stringify(accounts, null, 2));
+      
+      systemLogger.success('账号导入成功', `${data.email} (${data.accountType})`);
+      
+      return { 
+        success: true, 
+        message: '账号导入成功',
+        account: newAccount,
+        isNew: true
       };
     } catch (error) {
       return { success: false, error: error.message };
@@ -692,8 +847,8 @@ function registerAllIPC(app, mainWindow) {
     try {
       let accounts = [];
       
-      if (fs.existsSync(ACCOUNTS_FILE)) {
-        const data = fs.readFileSync(ACCOUNTS_FILE, 'utf-8');
+      if (fs.existsSync(getAccountsFile())) {
+        const data = fs.readFileSync(getAccountsFile(), 'utf-8');
         accounts = JSON.parse(data);
       }
       
@@ -707,7 +862,7 @@ function registerAllIPC(app, mainWindow) {
           account.needsManualBinding = false;
           
           // 保存
-          fs.writeFileSync(ACCOUNTS_FILE, JSON.stringify(accounts, null, 2));
+          fs.writeFileSync(getAccountsFile(), JSON.stringify(accounts, null, 2));
           
           return { success: false, error: `积分${account.monthlyPromptCredits} < 500，绑卡验证失败` };
         } else {
@@ -715,7 +870,7 @@ function registerAllIPC(app, mainWindow) {
           account.needsManualBinding = false;
           
           // 保存
-          fs.writeFileSync(ACCOUNTS_FILE, JSON.stringify(accounts, null, 2));
+          fs.writeFileSync(getAccountsFile(), JSON.stringify(accounts, null, 2));
           
           return { success: true };
         }

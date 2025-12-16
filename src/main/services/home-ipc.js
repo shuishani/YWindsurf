@@ -139,34 +139,54 @@ function registerHomeIPC(app) {
           let expiresAt = null;
           
           try {
-            // 从本地账号文件获取密码
+            // 从本地账号文件获取密码或 Token
             const windsurfPaths = require('../../shared/config/windsurf-paths');
             const ACCOUNTS_FILE = path.join(windsurfPaths.getJsonDataDir(), 'accounts.json');
             const accountsData = await fs.readFile(ACCOUNTS_FILE, 'utf-8');
             const accounts = JSON.parse(accountsData);
             const localAccount = accounts.find(acc => acc.email === email);
             
-            if (localAccount?.password) {
-              // 使用公共函数获取积分信息
-              const { getAccountCredits } = require('../../shared/lib/windsurf-api');
-              const creditsResult = await getAccountCredits(email, localAccount.password);
-              
-              if (creditsResult.success) {
-                const data = creditsResult.data;
-                usedPromptCredits = data.usedPromptCredits;
-                monthlyPromptCredits = data.monthlyPromptCredits;
-                usedFlowCredits = data.usedFlowCredits;
-                monthlyFlowCredits = data.monthlyFlowCredits;
-                createdAt = data.createdAt;
-                expiresAt = data.expiresAt;
-                
-                logger.success(`API获取成功: ${usedPromptCredits}/${monthlyPromptCredits}`);
-              } else {
-                logger.warning('积分获取失败，使用默认值:', creditsResult.error);
+            const { getAccountCredits, getAccountCreditsByRefreshToken } = require('../../shared/lib/windsurf-api');
+            let creditsResult = null;
+            
+            // 优先使用 Refresh Token
+            if (localAccount?.refreshToken) {
+              creditsResult = await getAccountCreditsByRefreshToken(localAccount.refreshToken);
+              // 更新 Token
+              if (creditsResult.success && creditsResult.newRefreshToken) {
+                localAccount.refreshToken = creditsResult.newRefreshToken;
+                await fs.writeFile(ACCOUNTS_FILE, JSON.stringify(accounts, null, 2));
               }
+            }
+            
+            // Token 失败或没有 Token，尝试密码
+            if (!creditsResult?.success && localAccount?.password) {
+              creditsResult = await getAccountCredits(email, localAccount.password);
+              // 保存 Token
+              if (creditsResult.success && creditsResult.refreshToken) {
+                localAccount.refreshToken = creditsResult.refreshToken;
+                await fs.writeFile(ACCOUNTS_FILE, JSON.stringify(accounts, null, 2));
+              }
+            }
+            
+            if (creditsResult?.success) {
+              const data = creditsResult.data;
+              usedPromptCredits = data.usedPromptCredits;
+              monthlyPromptCredits = data.monthlyPromptCredits;
+              usedFlowCredits = data.usedFlowCredits;
+              monthlyFlowCredits = data.monthlyFlowCredits;
+              createdAt = data.createdAt;
+              expiresAt = data.expiresAt;
+              
+              // 积分显示逻辑：每450为一个周期，超过后减去450的倍数（与账号管理保持一致）
+              const cycles = Math.floor(usedPromptCredits / 450);
+              const displayUsed = cycles > 0 ? usedPromptCredits - cycles * 450 : usedPromptCredits;
+              const percent = monthlyPromptCredits > 0 ? Math.round((displayUsed / monthlyPromptCredits) * 100) : 0;
+              logger.success(`API获取成功: ${displayUsed}/450 (${percent}%)`);
+            } else if (!localAccount?.refreshToken && !localAccount?.password) {
+              logger.warning(`账号 ${email} 未保存密码或Token，使用默认值`);
             } else {
-              logger.warning(`账号 ${email} 未保存密码，使用默认值`);
-              logger.info('请在账户管理页面添加密码以获取准确积分');
+              logger.warning('积分获取失败，使用默认值:', creditsResult?.error);
             }
           } catch (e) {
             logger.warning('积分获取失败，使用默认值:', e.message);
@@ -304,11 +324,6 @@ function registerHomeIPC(app) {
     }
   });
 
-  // 获取指定账号的详细信息（直接使用公共函数）
-  ipcMain.handle('get-account-details', async (event, email, password) => {
-    const { getAccountCredits } = require('../../shared/lib/windsurf-api');
-    return await getAccountCredits(email, password);
-  });
 }
 
 module.exports = { registerHomeIPC };
