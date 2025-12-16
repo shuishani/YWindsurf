@@ -220,8 +220,32 @@ function registerAllIPC(app, mainWindow) {
       
       const switcher = new AccountSwitcher(null, null, progressCallback);
       
-      // 执行自动切号
-      const switchResult = await switcher.switchAccountAdvanced(account.email, account.password);
+      // 构建 options 参数，支持多种切号方式
+      const options = {
+        refreshToken: account.refreshToken,  // RefreshToken（无需密码）
+        apiKey: account.apiKey,              // 缓存的 API Key（最快）
+        name: account.name                   // 缓存的用户名
+      };
+      
+      // 执行自动切号（优先级：apiKey > refreshToken > password）
+      const switchResult = await switcher.switchAccountAdvanced(account.email, account.password, options);
+      
+      // 如果切号成功且返回了新的 refreshToken，更新账号文件
+      if (switchResult.success && switchResult.newRefreshToken) {
+        try {
+          const accountsData = await fs.readFile(getAccountsFile(), 'utf-8');
+          const accounts = JSON.parse(accountsData);
+          const idx = accounts.findIndex(a => a.email === account.email);
+          if (idx !== -1) {
+            accounts[idx].refreshToken = switchResult.newRefreshToken;
+            if (switchResult.apiKey) accounts[idx].apiKey = switchResult.apiKey;
+            if (switchResult.name) accounts[idx].name = switchResult.name;
+            await fs.writeFile(getAccountsFile(), JSON.stringify(accounts, null, 2));
+          }
+        } catch (e) {
+          // 更新失败不影响切号结果
+        }
+      }
       
       // 保存当前登录信息到Windsurf数据目录
       await fs.writeFile(getCurrentLoginFile(), JSON.stringify(account, null, 2));
@@ -674,15 +698,14 @@ function registerAllIPC(app, mainWindow) {
       let newRefreshToken = null;
       
       if (accountData.refreshToken) {
-        creditsResult = await getAccountCreditsByRefreshToken(accountData.refreshToken);
+        // 传入 email 和 password 用于 Token 刷新失败时回退
+        creditsResult = await getAccountCreditsByRefreshToken(
+          accountData.refreshToken,
+          accountData.email,
+          accountData.password || null
+        );
         if (creditsResult.success && creditsResult.newRefreshToken) {
           newRefreshToken = creditsResult.newRefreshToken;
-        }
-        if (!creditsResult.success && accountData.password) {
-          creditsResult = await getAccountCredits(accountData.email, accountData.password);
-          if (creditsResult.success && creditsResult.refreshToken) {
-            newRefreshToken = creditsResult.refreshToken;
-          }
         }
       } else if (accountData.password) {
         creditsResult = await getAccountCredits(accountData.email, accountData.password);

@@ -64,18 +64,37 @@ function renderDomainList() {
   `).join('');
 }
 
+// 验证域名格式
+function isValidDomain(domain) {
+  // 去除可能的前缀
+  domain = domain.replace(/^(https?:\/\/)?(www\.)?/i, '');
+  // 简单验证：至少包含一个点，只允许字母、数字、连字符和点
+  // 支持子域名如 mail.example.com，也支持内部域名如 server.local
+  const domainRegex = /^[a-zA-Z0-9]([a-zA-Z0-9.-]*[a-zA-Z0-9])?$/;
+  return domain.includes('.') && domainRegex.test(domain) && !domain.includes('..');
+}
+
 // 添加域名
 function addDomain() {
   const input = document.getElementById('newDomain');
-  const domain = input.value.trim();
+  let domain = input.value.trim();
   
   if (!domain) {
-    alert('请输入域名');
+    showToast('请输入域名', 'warning');
+    return;
+  }
+  
+  // 自动去除常见前缀
+  domain = domain.replace(/^(https?:\/\/)?(www\.)?/i, '');
+  
+  // 验证域名格式
+  if (!isValidDomain(domain)) {
+    showToast('域名格式不正确，请输入如: example.com', 'error');
     return;
   }
   
   if (currentConfig.emailDomains.includes(domain)) {
-    alert('该域名已存在');
+    showToast('该域名已存在', 'warning');
     return;
   }
   
@@ -83,6 +102,7 @@ function addDomain() {
   input.value = '';
   renderDomainList();
   saveSettings();
+  showToast('域名添加成功', 'success');
 }
 
 // 删除域名

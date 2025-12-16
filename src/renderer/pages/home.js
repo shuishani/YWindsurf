@@ -86,7 +86,9 @@ async function refreshSystemInfo(showNotification = false) {
       // 使用统一的积分和PRO账号处理函数
       const creditsInfo = processAccountCredits(
         info.currentAccount.usedPromptCredits,
-        info.currentAccount.monthlyPromptCredits
+        info.currentAccount.monthlyPromptCredits,
+        false,
+        info.currentAccount.planType
       );
       
       // 账号类型显示

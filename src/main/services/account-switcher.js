@@ -227,30 +227,71 @@ class AccountSwitcher {
 
   /**
    * 主切号函数 - 完全自动切号
+   * 支持三种方式（按优先级）：
+   * 1. 使用缓存的 apiKey（最快）
+   * 2. 使用 refreshToken 获取（无需密码）
+   * 3. 使用密码登录获取（兜底）
+   * 
+   * @param {string} email - 邮箱
+   * @param {string} password - 密码（可选）
+   * @param {Object} options - 可选参数
+   * @param {string} options.refreshToken - RefreshToken
+   * @param {string} options.apiKey - 缓存的 API Key
+   * @param {string} options.name - 缓存的用户名
    */
-  async switchAccountAdvanced(email, password) {
+  async switchAccountAdvanced(email, password, options = {}) {
     try {
       this.logger.start('开始切换账号');
       this.logger.info(`目标账号: ${email}`);
-      const { ipcMain } = require('electron');
       
-      // 模拟调用 get-account-details
-      // 使用公共函数获取账号详情
-      const { getAccountCredits } = require('../../shared/lib/windsurf-api');
-      const accountDetailsResult = await getAccountCredits(email, password);
-
-      if (!accountDetailsResult.success) {
-        throw new Error('获取账号详情失败: ' + accountDetailsResult.error);
+      const { getAccountCredits, getAccountCreditsByRefreshToken } = require('../../shared/lib/windsurf-api');
+      let accountDetails = null;
+      let newRefreshToken = null;
+      
+      // 方式1: 使用缓存的 apiKey（最快，无需网络请求）
+      if (options.apiKey && options.name) {
+        accountDetails = {
+          email: email,
+          name: options.name,
+          apiKey: options.apiKey
+        };
       }
-
-      const accountDetails = accountDetailsResult.data;
+      
+      // 方式2: 使用 refreshToken 获取（传入 email 和 password 用于回退）
+      if (!accountDetails && options.refreshToken) {
+        const tokenResult = await getAccountCreditsByRefreshToken(
+          options.refreshToken,
+          email,
+          password || null
+        );
+        if (tokenResult.success) {
+          accountDetails = tokenResult.data;
+          newRefreshToken = tokenResult.newRefreshToken;
+        }
+      }
+      
+      // 方式3: 使用密码登录（兜底，仅当没有 refreshToken 时）
+      if (!accountDetails && password) {
+        const creditsResult = await getAccountCredits(email, password);
+        if (creditsResult.success) {
+          accountDetails = creditsResult.data;
+          newRefreshToken = creditsResult.refreshToken;
+        } else {
+          throw new Error('登录失败: ' + creditsResult.error);
+        }
+      }
+      
+      // 检查是否获取到账号信息
+      if (!accountDetails || !accountDetails.apiKey) {
+        throw new Error('获取账号信息失败，请检查账号状态');
+      }
       
       // 步骤2-3: 构建和加密数据（内部完成）
       const sessionsData = this.buildSessionsData(accountDetails);
       const encryptedBuffer = await this.encryptSessionsData(sessionsData);
       
-      this.sendProgress(2, 6, '数据准备完成');
-      this.logger.success('账号数据准备完成: ' + accountDetails.email);
+      this.sendProgress(2, 6, '获取账号信息');
+      this.logger.success('获取账号信息: ' + email);
 
       // 关闭 Windsurf
       this.sendProgress(3, 6, '关闭 Windsurf...');
@@ -306,7 +347,10 @@ class AccountSwitcher {
         account: {
           email: accountDetails.email,
           name: accountDetails.name
-        }
+        },
+        newRefreshToken: newRefreshToken,
+        apiKey: accountDetails.apiKey,
+        name: accountDetails.name
       };
 
     } catch (error) {

@@ -10,6 +10,9 @@ const windsurfPaths = require('../../shared/config/windsurf-paths');
  * Windsurf管理器 - Windows版本
  * 重置配置、机器码、自动登录
  */
+// 静态变量：缓存 Windsurf 可执行文件路径
+let cachedWindsurfPath = null;
+
 class WindsurfManagerWindows {
   constructor(logCallback = null, tag = '') {
     // logCallback参数保留以兼容旧代码，但不再使用
@@ -116,6 +119,25 @@ class WindsurfManagerWindows {
   }
 
   /**
+   * 获取正在运行的 Windsurf 可执行文件路径
+   */
+  async getRunningWindsurfPath() {
+    try {
+      const { stdout } = await execPromise(
+        'wmic process where "name=\'Windsurf.exe\'" get ExecutablePath /format:list',
+        { timeout: 5000 }
+      );
+      const match = stdout.match(/ExecutablePath=(.+\.exe)/i);
+      if (match && match[1]) {
+        return match[1].trim();
+      }
+    } catch (error) {
+      // 获取失败，忽略
+    }
+    return null;
+  }
+
+  /**
    * 关闭 Windsurf 应用（Windows）
    */
   async closeWindsurf() {
@@ -126,6 +148,12 @@ class WindsurfManagerWindows {
       if (!isRunning) {
         this.logger.info('Windsurf未运行');
         return true;
+      }
+      
+      // 关闭前缓存运行路径（用于后续启动）
+      const runningPath = await this.getRunningWindsurfPath();
+      if (runningPath) {
+        cachedWindsurfPath = runningPath;
       }
       
       this.logger.info('检测到Windsurf正在运行,开始关闭');
@@ -511,8 +539,22 @@ class WindsurfManagerWindows {
     try {
       this.log('\n启动Windsurf...');
       
-      // 检测应用路径
-      const appPath = await this.detectWindsurfApp();
+      let appPath = null;
+      
+      // 优先使用缓存的路径（关闭时保存的）
+      if (cachedWindsurfPath) {
+        try {
+          await fs.access(cachedWindsurfPath);
+          appPath = cachedWindsurfPath;
+        } catch (e) {
+          // 缓存路径无效，继续检测
+        }
+      }
+      
+      // 缓存路径无效，检测应用路径
+      if (!appPath) {
+        appPath = await this.detectWindsurfApp();
+      }
       
       // 使用 start 命令启动
       await execPromise(`start "" "${appPath}"`);
@@ -795,7 +837,22 @@ class WindsurfManagerWindows {
       
       // 启动 Windsurf
       const { spawn } = require('child_process');
-      const windsurfPath = this.windsurfPaths.getExecutablePath();
+      let windsurfPath = null;
+      
+      // 优先使用缓存的路径（关闭时保存的）
+      if (cachedWindsurfPath) {
+        try {
+          await fs.access(cachedWindsurfPath);
+          windsurfPath = cachedWindsurfPath;
+        } catch (e) {
+          // 缓存路径无效，继续检测
+        }
+      }
+      
+      // 缓存路径无效，使用配置的路径
+      if (!windsurfPath) {
+        windsurfPath = this.windsurfPaths.getExecutablePath();
+      }
       
       // 检查 Windsurf 可执行文件是否存在
       try {

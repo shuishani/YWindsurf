@@ -182,28 +182,13 @@ class WindsurfPaths {
 
   /**
    * 获取安装版本的 data 文件夹
-   * 直接使用当前应用安装目录下的 data 文件夹
+   * 使用 %APPDATA%\YWindsurf，这样升级安装不会丢失数据
    */
   getYWindsurfDataDir() {
     try {
-      // 获取当前应用的可执行文件路径
-      const { app } = require('electron');
-      const appPath = app.getAppPath();
-      
-      // 如果是打包后的应用，appPath 会指向 app.asar 或安装目录
-      // 我们需要找到实际的安装目录
-      let installDir;
-      
-      if (appPath.includes('.asar')) {
-        // 打包后的应用，获取 .asar 文件的父目录的父目录
-        installDir = path.dirname(path.dirname(appPath));
-      } else {
-        // 开发环境或未打包，向上查找到合适的目录
-        installDir = path.dirname(appPath);
-      }
-      
-      // 返回安装目录下的 data 文件夹
-      const dataDir = path.join(installDir, 'data');
+      // 使用 AppData 目录存储用户数据，升级安装不受影响
+      const appDataDir = process.env.APPDATA || process.env.HOME;
+      const dataDir = path.join(appDataDir, 'YWindsurf', 'data');
       
       // 确保目录存在
       if (!fs.existsSync(dataDir)) {

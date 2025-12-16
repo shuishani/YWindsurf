@@ -23,6 +23,7 @@ async function loadAccounts() {
     accountsCache = accounts || [];
     await renderAccounts();
     updateAccountStats();
+    updateSelectedBindCount(); // 重置选中计数
   } catch (error) {
     await handleError(error, '加载账号', true);
   }
@@ -365,20 +366,29 @@ function updateAccountStats() {
     const isExpired = expiry.isExpired;
     const daysLeft = expiry.daysLeft; // 可能是 null（无到期时间）
     
-    // 计算用量百分比和剩余百分比
-    let usageRate = 0;
-    let remainingRate = 100;
-    if (acc.usedPromptCredits !== undefined && acc.monthlyPromptCredits !== undefined && acc.monthlyPromptCredits > 0) {
-      usageRate = (acc.usedPromptCredits / acc.monthlyPromptCredits) * 100;
-      remainingRate = 100 - usageRate;
+    // 积分计算逻辑：使用取模运算
+    const rawUsed = acc.usedPromptCredits || 0;
+    const totalCredits = acc.monthlyPromptCredits || 0;
+    const displayUsed = totalCredits > 0 ? (rawUsed % totalCredits) : rawUsed;
+    
+    // 计算用量百分比
+    let usagePercent = 0;
+    if (totalCredits > 0) {
+      usagePercent = (displayUsed / totalCredits) * 100;
     }
     
+    // 判断是否不可用
+    // Free/Trial：过期或使用量>=95% → 不可用（可被快速选择删除）
+    // Pro/Teams/Enterprise：只有过期才算不可用（只能手动删除）
+    const planType = acc.planType || 'Free';
+    const isFreeOrTrial = planType === 'Free' || planType === 'Trial';
+    const isUsedUp = isFreeOrTrial && totalCredits > 0 && usagePercent >= 95;
+    
     // 分类判断
-    if (isExpired || usageRate >= 100) {
-      // 不可用：已过期 或 积分用完
+    if (isExpired || isUsedUp) {
       unavailable++;
-    } else if (remainingRate <= 10 || (daysLeft !== null && daysLeft <= 3)) {
-      // 即将耗尽：剩余积分<=10% 或 剩余<=3天（只有有到期时间时才判断天数）
+    } else if (isFreeOrTrial && (usagePercent >= 90 || (daysLeft !== null && daysLeft <= 3))) {
+      // 即将耗尽：只有 Free/Trial 才显示警告
       warning++;
     } else {
       // 可用：其他情况
@@ -480,6 +490,7 @@ function toggleActionMenu(event, id) {
       <div class="action-menu-item" onclick="pinAccount('${acc.id}'); document.getElementById('accountActionMenu')?.remove();">${getMenuIcon('arrowUp')}置顶账号</div>
       <div class="action-menu-item" onclick="switchAccount('${acc.email}', '${acc.password}'); document.getElementById('accountActionMenu')?.remove();">${getMenuIcon('repeat')}切换账号</div>
       <div class="action-menu-item" onclick="viewAccount('${acc.email}', '${acc.password}'); document.getElementById('accountActionMenu')?.remove();">${getMenuIcon('eye')}查看详情</div>
+      <div class="action-menu-item" onclick="getPaymentLinkForAccount('${acc.email}'); document.getElementById('accountActionMenu')?.remove();">${getMenuIcon('link')}获取绑卡链接</div>
       <div class="action-menu-item" onclick="editAccount('${acc.id}', '${acc.email}', '${acc.password}'); document.getElementById('accountActionMenu')?.remove();">${getMenuIcon('edit')}编辑账号</div>
       <div class="action-menu-item danger" onclick="deleteAccountFromTable('${acc.id}', '${acc.email}'); document.getElementById('accountActionMenu')?.remove();">${getMenuIcon('trash')}删除账号</div>
     </div>
@@ -921,71 +932,103 @@ async function importAccountsByToken() {
   }
 }
 
-// 导入账号
-function showImportAccountForm() {
-  document.getElementById('importFile').value = '';
-  document.getElementById('importPreview').value = '';
-  document.getElementById('importResult').innerHTML = '';
-  document.getElementById('importAccountModal').style.display = 'flex';
+// 添加账号弹窗
+let addAccountType = 'password';
+
+function showAddAccountModal() {
+  addAccountType = 'password';
+  document.querySelector('input[name="addAccountType"][value="password"]').checked = true;
+  document.getElementById('addAccountPasswordSection').style.display = 'block';
+  document.getElementById('addAccountTokenSection').style.display = 'none';
+  document.getElementById('addAccountInput').value = '';
+  document.getElementById('addAccountTokenInput').value = '';
+  document.getElementById('addAccountResult').innerHTML = '';
+  document.getElementById('addAccountModal').style.display = 'flex';
 }
 
-function hideImportAccountForm() {
-  document.getElementById('importAccountModal').style.display = 'none';
+function hideAddAccountModal() {
+  document.getElementById('addAccountModal').style.display = 'none';
 }
 
-async function importAccounts() {
-  const text = document.getElementById('importPreview').value.trim();
-  const resultEl = document.getElementById('importResult');
+function switchAddAccountType(type) {
+  addAccountType = type;
+  if (type === 'password') {
+    document.getElementById('addAccountPasswordSection').style.display = 'block';
+    document.getElementById('addAccountTokenSection').style.display = 'none';
+  } else {
+    document.getElementById('addAccountPasswordSection').style.display = 'none';
+    document.getElementById('addAccountTokenSection').style.display = 'block';
+  }
+  document.getElementById('addAccountResult').innerHTML = '';
+}
+
+async function doAddAccounts() {
+  if (addAccountType === 'password') {
+    await importAccountsByPassword();
+  } else {
+    await importAccountsByTokenNew();
+  }
+}
+
+async function importAccountsByPassword() {
+  const text = document.getElementById('addAccountInput').value.trim();
+  const resultEl = document.getElementById('addAccountResult');
 
   if (!text) {
-    resultEl.innerHTML = '<div class="status-message status-error">请选择文件</div>';
+    resultEl.innerHTML = '<div class="status-message status-error">请输入账号信息</div>';
     return;
   }
 
   let successCount = 0;
   let failCount = 0;
   let duplicateCount = 0;
+  let accounts = [];
 
-  try {
-    // 解析JSON格式 - 只支持直接数组格式
-    const accounts = JSON.parse(text);
-    
-    if (!Array.isArray(accounts)) {
-      throw new Error('JSON格式错误：应为账号数组格式 [{"email": "xxx", "password": "xxx"}]');
+  // TXT 格式（每行：邮箱 密码）
+  const lines = text.split('\n').map(l => l.trim()).filter(l => l.length > 0);
+  for (const line of lines) {
+    // 支持空格或制表符分隔
+    const parts = line.split(/[\s\t]+/);
+    if (parts.length >= 2) {
+      accounts.push({
+        email: parts[0],
+        password: parts.slice(1).join(' ')  // 密码可能包含空格
+      });
     }
-
-    for (const acc of accounts) {
-      if (!acc.email || !acc.password) {
-        failCount++;
-        continue;
-      }
-
-      // 检查是否已存在
-      const exists = accountsCache.find(existing => existing.email === acc.email);
-      if (exists) {
-        duplicateCount++;
-        continue;
-      }
-
-      try {
-        const result = await ipcRenderer.invoke('add-account', {
-          email: acc.email,
-          password: acc.password
-          // 不设置 createdAt，让它保持未知状态，等刷新后获取真实数据
-        });
-        
-        if (result.success) {
-          successCount++;
-        } else {
-          failCount++;
-        }
-      } catch (error) {
-        failCount++;
-      }
-    }
-  } catch (jsonError) {
-    resultEl.innerHTML = '<div class="status-message status-error">文件格式错误，请选择正确的JSON文件</div>';
+  }
+  
+  if (accounts.length === 0) {
+    resultEl.innerHTML = '<div class="status-message status-error">格式错误，请检查格式：邮箱 密码</div>';
     return;
+  }
+
+  for (const acc of accounts) {
+    if (!acc.email || !acc.password) {
+      failCount++;
+      continue;
+    }
+
+    // 检查是否已存在
+    const exists = accountsCache.find(existing => existing.email === acc.email);
+    if (exists) {
+      duplicateCount++;
+      continue;
+    }
+
+    try {
+      const result = await ipcRenderer.invoke('add-account', {
+        email: acc.email,
+        password: acc.password
+      });
+      
+      if (result.success) {
+        successCount++;
+      } else {
+        failCount++;
+      }
+    } catch (error) {
+      failCount++;
+    }
   }
 
   if (successCount > 0) {
@@ -1005,7 +1048,7 @@ async function importAccounts() {
       </div>
     `;
     setTimeout(() => {
-      hideImportAccountForm();
+      hideAddAccountModal();
     }, 2000);
   } else {
     let message = '没有成功导入任何账号';
@@ -1016,20 +1059,67 @@ async function importAccounts() {
   }
 }
 
+// Token导入（新版）
+async function importAccountsByTokenNew() {
+  const text = document.getElementById('addAccountTokenInput').value.trim();
+  const resultEl = document.getElementById('addAccountResult');
 
+  if (!text) {
+    resultEl.innerHTML = '<div class="status-message status-error">请输入 Token</div>';
+    return;
+  }
+
+  const tokens = text.split('\n').map(t => t.trim()).filter(t => t.length > 0);
+  
+  if (tokens.length === 0) {
+    resultEl.innerHTML = '<div class="status-message status-error">请输入有效的 Token</div>';
+    return;
+  }
+
+  let successCount = 0;
+  let failCount = 0;
+  let updateCount = 0;
+
+  resultEl.innerHTML = `<div class="status-message status-info">正在导入 ${tokens.length} 个账号...</div>`;
+
+  for (const token of tokens) {
+    try {
+      const result = await ipcRenderer.invoke('import-account-by-token', token);
+      if (result.success) {
+        if (result.updated) {
+          updateCount++;
+        } else {
+          successCount++;
+        }
+      } else {
+        failCount++;
+      }
+    } catch (error) {
+      failCount++;
+    }
+  }
+
+  let html = '';
+  if (successCount > 0 || updateCount > 0) {
+    let message = '';
+    if (successCount > 0) message += `成功导入 ${successCount} 个账号`;
+    if (updateCount > 0) message += (message ? '，' : '') + `更新 ${updateCount} 个账号`;
+    if (failCount > 0) message += `，${failCount} 个失败`;
+    html = `<div class="status-message status-success">${message}</div>`;
+    await loadAccounts();
+    setTimeout(() => {
+      hideAddAccountModal();
+    }, 2000);
+  } else {
+    html = `<div class="status-message status-error">导入失败${failCount > 0 ? `（${failCount} 个）` : ''}</div>`;
+  }
+  
+  resultEl.innerHTML = html;
+}
 
 // 初始化事件监听
 function initAccountEvents() {
-  // 导入文件监听
-  const importInput = document.getElementById('importFile');
-  if (importInput) {
-    importInput.addEventListener('change', async (e) => {
-      const file = e.target.files[0];
-      if (!file) return;
-      const text = await file.text();
-      document.getElementById('importPreview').value = text;
-    });
-  }
+  // 无需文件监听
 }
 
 // 点击页面其他地方关闭菜单
@@ -1147,9 +1237,10 @@ async function selectUnboundAccounts() {
   showToast(`已选择 ${count} 个未绑卡账号`, 'success');
 }
 
-// 切换快速筛选菜单
-function toggleQuickFilterMenu() {
-  const menu = document.getElementById('quickFilterMenu');
+// 切换选择菜单
+function toggleSelectMenu(event) {
+  event.stopPropagation();
+  const menu = document.getElementById('selectMenu');
   if (menu) {
     menu.style.display = menu.style.display === 'none' ? 'block' : 'none';
   }
@@ -1158,12 +1249,19 @@ function toggleQuickFilterMenu() {
   if (menu && menu.style.display === 'block') {
     setTimeout(() => {
       document.addEventListener('click', function closeMenu(e) {
-        if (!e.target.closest('#quickFilterMenu') && !e.target.closest('button[onclick*="toggleQuickFilterMenu"]')) {
+        if (!e.target.closest('#selectMenu')) {
           menu.style.display = 'none';
           document.removeEventListener('click', closeMenu);
         }
       });
     }, 0);
+  }
+}
+
+function hideSelectMenu() {
+  const menu = document.getElementById('selectMenu');
+  if (menu) {
+    menu.style.display = 'none';
   }
 }
 
@@ -1301,6 +1399,59 @@ async function refreshSelectedAccounts() {
   logger.info(`批量刷新完成：成功 ${successCount} 个，失败 ${failCount} 个`);
 }
 
+// 切换导出菜单
+function toggleExportMenu(event) {
+  event.stopPropagation();
+  const menu = document.getElementById('exportMenu');
+  if (menu) {
+    menu.style.display = menu.style.display === 'none' ? 'block' : 'none';
+  }
+  
+  // 点击外部关闭菜单
+  if (menu && menu.style.display === 'block') {
+    setTimeout(() => {
+      document.addEventListener('click', function closeMenu(e) {
+        if (!e.target.closest('#exportMenu')) {
+          menu.style.display = 'none';
+          document.removeEventListener('click', closeMenu);
+        }
+      });
+    }, 0);
+  }
+}
+
+function hideExportMenu() {
+  const menu = document.getElementById('exportMenu');
+  if (menu) {
+    menu.style.display = 'none';
+  }
+}
+
+// 获取账号的显示类型（直接使用 planType 字段，与后端数据保持一致）
+function getAccountDisplayType(acc) {
+  return acc.planType || 'Free';
+}
+
+// 按类型导出账号
+async function exportAccountsByType(type) {
+  let accountsToExport = [];
+  
+  if (type === 'all') {
+    accountsToExport = [...accountsCache];
+  } else {
+    // 按账号类型过滤 - 使用与显示一致的逻辑
+    accountsToExport = accountsCache.filter(acc => getAccountDisplayType(acc) === type);
+  }
+  
+  if (accountsToExport.length === 0) {
+    showToast(`没有 ${type === 'all' ? '' : type + ' 类型的'}账号可导出`, 'warning');
+    return;
+  }
+  
+  // 显示格式选择弹窗
+  showExportFormatDialog(accountsToExport);
+}
+
 // 导出选中的账号
 async function exportSelectedAccounts() {
   const selectedAccounts = getSelectedAccounts();
@@ -1310,24 +1461,88 @@ async function exportSelectedAccounts() {
     return;
   }
   
-  // 导出为 JSON 格式（直接数组，只包含 email 和 password）
-  const exportData = selectedAccounts.map(acc => ({
-    email: acc.email,
-    password: acc.password
-  }));
+  // 显示格式选择弹窗
+  showExportFormatDialog(selectedAccounts);
+}
+
+// 显示导出格式选择弹窗
+function showExportFormatDialog(accounts) {
+  const dialog = document.createElement('div');
+  dialog.className = 'modal-overlay';
+  dialog.id = 'exportFormatDialog';
+  dialog.style.display = 'flex';
+  dialog.innerHTML = `
+    <div class="modal-dialog" style="max-width:350px;">
+      <div class="modal-header">选择导出格式</div>
+      <div style="padding:16px;">
+        <div style="margin-bottom:12px;">
+          <label style="display:flex; align-items:center; cursor:pointer; padding:10px; border:1px solid #e5e5ea; border-radius:8px; margin-bottom:8px;">
+            <input type="radio" name="exportFormat" value="txt" checked style="margin-right:10px;">
+            <div>
+              <div style="font-weight:500;">TXT 格式</div>
+              <div style="font-size:12px; color:#86868b;">每行：邮箱 密码（空格分隔）</div>
+            </div>
+          </label>
+          <label style="display:flex; align-items:center; cursor:pointer; padding:10px; border:1px solid #e5e5ea; border-radius:8px;">
+            <input type="radio" name="exportFormat" value="json" style="margin-right:10px;">
+            <div>
+              <div style="font-weight:500;">JSON 格式</div>
+              <div style="font-size:12px; color:#86868b;">[{"email": "...", "password": "..."}]</div>
+            </div>
+          </label>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn" onclick="document.getElementById('exportFormatDialog').remove()">取消</button>
+        <button class="btn btn-primary" onclick="doExportAccounts()">导出</button>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(dialog);
   
-  const content = JSON.stringify(exportData, null, 2);
-  const blob = new Blob([content], { type: 'application/json' });
+  // 保存账号数据供导出使用
+  window._exportAccounts = accounts;
+}
+
+// 执行导出
+function doExportAccounts() {
+  const accounts = window._exportAccounts;
+  const format = document.querySelector('input[name="exportFormat"]:checked').value;
+  
+  let content, filename, type;
+  const dateStr = new Date().toISOString().split('T')[0];
+  
+  if (format === 'txt') {
+    // TXT 格式：邮箱 密码
+    content = accounts.map(acc => `${acc.email} ${acc.password || ''}`).join('\n');
+    filename = `windsurf_accounts_${dateStr}.txt`;
+    type = 'text/plain';
+  } else {
+    // JSON 格式
+    const exportData = accounts.map(acc => ({
+      email: acc.email,
+      password: acc.password
+    }));
+    content = JSON.stringify(exportData, null, 2);
+    filename = `windsurf_accounts_${dateStr}.json`;
+    type = 'application/json';
+  }
+  
+  const blob = new Blob([content], { type });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
-  a.download = `windsurf_accounts_selected_${new Date().toISOString().split('T')[0]}.json`;
+  a.download = filename;
   document.body.appendChild(a);
   a.click();
   document.body.removeChild(a);
   URL.revokeObjectURL(url);
   
-  logger.successWithToast(`导出选中账号：${selectedAccounts.length} 个`, `已导出 ${selectedAccounts.length} 个账号`);
+  // 关闭弹窗
+  document.getElementById('exportFormatDialog').remove();
+  delete window._exportAccounts;
+  
+  logger.successWithToast(`导出选中账号：${accounts.length} 个`, `已导出 ${accounts.length} 个账号`);
 }
 
 // 删除选中的账号
@@ -1632,45 +1847,17 @@ async function apiBindSingleAccount(email, password) {
   }
 }
 
-// 获取选中账号的绑卡链接
-async function getPaymentLinkForSelected() {
-  const selectedAccounts = getSelectedAccounts();
-  
-  if (selectedAccounts.length === 0) {
-    showToast('请先选择要获取绑卡链接的账号', 'warning');
+// 获取单个账号的绑卡链接
+async function getPaymentLinkForAccount(email) {
+  // 从缓存中找到账号
+  const account = accountsCache.find(acc => acc.email === email);
+  if (!account) {
+    showToast('账号不存在', 'error');
     return;
   }
   
-  if (selectedAccounts.length === 1) {
-    // 单个账号直接获取
-    await getPaymentLinkOnly(selectedAccounts[0].email, selectedAccounts[0].password);
-  } else {
-    // 多个账号显示列表
-    showToast(`正在获取 ${selectedAccounts.length} 个账号的绑卡链接...`, 'info');
-    
-    let successCount = 0;
-    const links = [];
-    
-    for (const account of selectedAccounts) {
-      try {
-        const result = await ipcRenderer.invoke('get-payment-link', { email: account.email, password: account.password });
-        if (result && result.success && result.paymentLink) {
-          successCount++;
-          links.push(`${account.email}: ${result.paymentLink}`);
-        }
-      } catch (error) {
-        // 忽略单个错误
-      }
-    }
-    
-    if (links.length > 0) {
-      // 复制所有链接到剪贴板
-      await navigator.clipboard.writeText(links.join('\n'));
-      showToast(`已复制 ${successCount} 个绑卡链接到剪贴板`, 'success');
-    } else {
-      showToast('获取绑卡链接失败', 'error');
-    }
-  }
+  showToast('正在获取绑卡链接...', 'info');
+  await getPaymentLinkOnly(email, account.password);
 }
 
 // 仅获取支付链接（不打开浏览器）
@@ -2067,12 +2254,10 @@ const accountsModule = {
   filterAccountsByEmail,
   deleteAccountFromTable,
   updateAccountStats,
-  showAddAccountForm,
-  hideAddAccountForm,
-  addManualAccount,
-  showImportAccountForm,
-  hideImportAccountForm,
-  importAccounts,
+  showAddAccountModal,
+  hideAddAccountModal,
+  switchAddAccountType,
+  doAddAccounts,
   toggleSelectAllAccounts,
   updateSelectedBindCount,
   switchAccount,
@@ -2093,7 +2278,8 @@ const accountsModule = {
   hideSwitchLog,
   addSwitchLog,
   updateSwitchProgress,
-  toggleQuickFilterMenu,
+  toggleSelectMenu,
+  hideSelectMenu,
   selectAccountsForCleanup,
   selectAllAccountsCheckbox,
   invertSelection,
@@ -2101,6 +2287,10 @@ const accountsModule = {
   toggleMoreActionsMenu,
   refreshSelectedAccounts,
   exportSelectedAccounts,
+  toggleExportMenu,
+  hideExportMenu,
+  exportAccountsByType,
+  doExportAccounts,
   deleteSelectedAccounts,
   toggleCardSelector,
   toggleRetryCardSelector,
@@ -2128,7 +2318,7 @@ const accountsModule = {
   executeApiBatchBinding,
   apiBindSingleAccount,
   getPaymentLinkOnly,
-  getPaymentLinkForSelected,
+  getPaymentLinkForAccount,
   showBindingLog,
   getSelectedCardId
 };

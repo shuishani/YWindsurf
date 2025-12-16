@@ -442,6 +442,7 @@
 .accounts-table tbody tr td:first-child {
   border-top-left-radius: 10px;
   border-bottom-left-radius: 10px;
+  text-align: center;
 }
 
 .accounts-table tbody tr td:last-child {

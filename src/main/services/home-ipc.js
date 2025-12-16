@@ -149,9 +149,13 @@ function registerHomeIPC(app) {
             const { getAccountCredits, getAccountCreditsByRefreshToken } = require('../../shared/lib/windsurf-api');
             let creditsResult = null;
             
-            // 优先使用 Refresh Token
+            // 优先使用 Refresh Token（传入 email 和 password 用于回退）
             if (localAccount?.refreshToken) {
-              creditsResult = await getAccountCreditsByRefreshToken(localAccount.refreshToken);
+              creditsResult = await getAccountCreditsByRefreshToken(
+                localAccount.refreshToken,
+                email,
+                localAccount.password || null
+              );
               // 更新 Token
               if (creditsResult.success && creditsResult.newRefreshToken) {
                 localAccount.refreshToken = creditsResult.newRefreshToken;
@@ -178,11 +182,10 @@ function registerHomeIPC(app) {
               createdAt = data.createdAt;
               expiresAt = data.expiresAt;
               
-              // 积分显示逻辑：每450为一个周期，超过后减去450的倍数（与账号管理保持一致）
-              const cycles = Math.floor(usedPromptCredits / 450);
-              const displayUsed = cycles > 0 ? usedPromptCredits - cycles * 450 : usedPromptCredits;
+              // 积分显示逻辑：使用取模运算
+              const displayUsed = monthlyPromptCredits > 0 ? (usedPromptCredits % monthlyPromptCredits) : usedPromptCredits;
               const percent = monthlyPromptCredits > 0 ? Math.round((displayUsed / monthlyPromptCredits) * 100) : 0;
-              logger.success(`API获取成功: ${displayUsed}/450 (${percent}%)`);
+              logger.success(`API获取成功: ${displayUsed}/${monthlyPromptCredits} (${percent}%)`);
             } else if (!localAccount?.refreshToken && !localAccount?.password) {
               logger.warning(`账号 ${email} 未保存密码或Token，使用默认值`);
             } else {
@@ -202,6 +205,7 @@ function registerHomeIPC(app) {
             name: userName || email.split('@')[0],
             isPro: isPro,
             accountType: accountType,
+            planType: planName,  // 添加 planType 字段供前端使用
             apiKey: apiKey,
             usedPromptCredits: usedPromptCredits,
             monthlyPromptCredits: monthlyPromptCredits,

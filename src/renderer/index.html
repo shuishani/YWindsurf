@@ -240,53 +240,54 @@
               <span style="position:absolute; left:10px; top:50%; transform:translateY(-50%); color:#86868b; font-size:14px;"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg></span>
             </div>
           </div>
-          <div style="display:flex; gap:10px;">
-            <!-- 快速筛选下拉菜单 -->
+          <div style="display:flex; gap:8px; align-items:center;">
+            <!-- 快速选择下拉菜单 -->
             <div class="dropdown" style="position:relative;">
-              <button class="modern-btn btn-secondary" onclick="toggleQuickFilterMenu()">
-                快速筛选 ▾
+              <button class="modern-btn btn-secondary" onclick="toggleSelectMenu(event)" style="display:inline-flex; align-items:center; gap:4px;">
+                选择 ▾
               </button>
-              <div id="quickFilterMenu" style="display:none; position:absolute; top:100%; right:0; margin-top:4px; background:white; border:1px solid #e5e5ea; border-radius:10px; box-shadow:0 4px 12px rgba(0,0,0,0.1); min-width:160px; z-index:1000; overflow:hidden;">
-                <div onclick="selectUnboundAccounts(); toggleQuickFilterMenu();" style="padding:10px 16px; cursor:pointer; font-size:13px; border-bottom:1px solid #f5f5f7; transition: background 0.15s;">未绑卡账号</div>
-                <div onclick="selectAccountsForCleanup(); toggleQuickFilterMenu();" style="padding:10px 16px; cursor:pointer; font-size:13px; border-bottom:1px solid #f5f5f7; transition: background 0.15s;">可清理账号</div>
-                <div onclick="invertSelection(); toggleQuickFilterMenu();" style="padding:10px 16px; cursor:pointer; font-size:13px; transition: background 0.15s;">反选</div>
+              <div id="selectMenu" style="display:none; position:absolute; top:100%; right:0; margin-top:4px; background:white; border:1px solid #e5e5ea; border-radius:8px; box-shadow:0 4px 12px rgba(0,0,0,0.15); min-width:120px; z-index:1000; overflow:hidden;">
+                <div onclick="selectUnboundAccounts(); hideSelectMenu();" style="padding:8px 12px; cursor:pointer; font-size:12px; border-bottom:1px solid #f5f5f7;">未绑卡账号</div>
+                <div onclick="selectAccountsForCleanup(); hideSelectMenu();" style="padding:8px 12px; cursor:pointer; font-size:12px; border-bottom:1px solid #f5f5f7;">可清理账号</div>
+                <div onclick="invertSelection(); hideSelectMenu();" style="padding:8px 12px; cursor:pointer; font-size:12px;">反选</div>
               </div>
             </div>
-            <!-- 刷新选中按钮 -->
-            <button class="modern-btn btn-secondary" onclick="refreshSelectedAccounts()" title="刷新选中账号的积分数据">
-              刷新选中
+            <!-- 添加按钮 -->
+            <button class="modern-btn btn-secondary" onclick="showAddAccountModal()" style="display:inline-flex; align-items:center; gap:4px;">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+              添加
             </button>
-            
-            <!-- 更多操作下拉菜单 -->
+            <!-- 导出下拉菜单 -->
             <div class="dropdown" style="position:relative;">
-              <button class="modern-btn btn-secondary" onclick="toggleMoreActionsMenu()">
-                更多 ▾
+              <button class="modern-btn btn-secondary" onclick="toggleExportMenu(event)" style="display:inline-flex; align-items:center; gap:4px;">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+                导出 ▾
               </button>
-              <div id="moreActionsMenu" style="display:none; position:absolute; top:100%; right:0; margin-top:4px; background:white; border:1px solid #e5e5ea; border-radius:10px; box-shadow:0 4px 12px rgba(0,0,0,0.1); min-width:150px; z-index:1000; overflow:hidden;">
-                <div onclick="getPaymentLinkForSelected(); toggleMoreActionsMenu();" style="padding:10px 16px; cursor:pointer; font-size:13px; border-bottom:1px solid #f5f5f7; transition: background 0.15s;">查看绑卡链接</div>
-                <div onclick="exportSelectedAccounts(); toggleMoreActionsMenu();" style="padding:10px 16px; cursor:pointer; font-size:13px; border-bottom:1px solid #f5f5f7; transition: background 0.15s;">导出选中</div>
-                <div onclick="deleteSelectedAccounts(); toggleMoreActionsMenu();" style="padding:10px 16px; cursor:pointer; font-size:13px; color:#ff3b30; transition: background 0.15s;">删除选中</div>
+              <div id="exportMenu" style="display:none; position:absolute; top:100%; right:0; margin-top:4px; background:white; border:1px solid #e5e5ea; border-radius:8px; box-shadow:0 4px 12px rgba(0,0,0,0.15); min-width:100px; z-index:1000; overflow:hidden;">
+                <div onclick="exportAccountsByType('all'); hideExportMenu();" style="padding:8px 12px; cursor:pointer; font-size:12px; border-bottom:1px solid #f5f5f7;">全部导出</div>
+                <div onclick="exportAccountsByType('Enterprise'); hideExportMenu();" style="padding:8px 12px; cursor:pointer; font-size:12px; border-bottom:1px solid #f5f5f7;">仅 Enterprise</div>
+                <div onclick="exportAccountsByType('Teams'); hideExportMenu();" style="padding:8px 12px; cursor:pointer; font-size:12px; border-bottom:1px solid #f5f5f7;">仅 Teams</div>
+                <div onclick="exportAccountsByType('Pro'); hideExportMenu();" style="padding:8px 12px; cursor:pointer; font-size:12px; border-bottom:1px solid #f5f5f7;">仅 Pro</div>
+                <div onclick="exportAccountsByType('Trial'); hideExportMenu();" style="padding:8px 12px; cursor:pointer; font-size:12px; border-bottom:1px solid #f5f5f7;">仅 Trial</div>
+                <div onclick="exportAccountsByType('Free'); hideExportMenu();" style="padding:8px 12px; cursor:pointer; font-size:12px;">仅 Free</div>
               </div>
             </div>
-            
-            <!-- 添加账号下拉菜单 -->
-            <div class="dropdown" style="position:relative;">
-              <button class="modern-btn btn-secondary" onclick="toggleAddAccountMenu()">
-                添加账号 ▾
-              </button>
-              <div id="addAccountMenu" style="display:none; position:absolute; top:100%; right:0; margin-top:4px; background:white; border:1px solid #e5e5ea; border-radius:10px; box-shadow:0 4px 12px rgba(0,0,0,0.1); min-width:150px; z-index:1000; overflow:hidden;">
-                <div onclick="showAddAccountForm(); toggleAddAccountMenu();" style="padding:10px 16px; cursor:pointer; font-size:13px; border-bottom:1px solid #f5f5f7; transition: background 0.15s;">输入账号密码</div>
-                <div onclick="showImportByTokenForm(); toggleAddAccountMenu();" style="padding:10px 16px; cursor:pointer; font-size:13px; border-bottom:1px solid #f5f5f7; transition: background 0.15s;">Token导入账号</div>
-                <div onclick="showImportAccountForm(); toggleAddAccountMenu();" style="padding:10px 16px; cursor:pointer; font-size:13px; transition: background 0.15s;">批量导入账号</div>
-              </div>
-            </div>
+            <div style="width:1px; height:20px; background:#d2d2d7; margin:0 4px;"></div>
+            <!-- 刷新按钮 -->
+            <button class="modern-btn btn-icon" onclick="refreshSelectedAccounts()" title="刷新选中账号" style="width:36px; height:36px; padding:0; display:inline-flex; align-items:center; justify-content:center;">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 4v6h-6"></path><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path></svg>
+            </button>
+            <!-- 删除按钮 -->
+            <button class="modern-btn btn-icon" onclick="deleteSelectedAccounts()" title="删除选中账号" style="width:36px; height:36px; padding:0; display:inline-flex; align-items:center; justify-content:center; color:#ff3b30;">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
+            </button>
           </div>
         </div>
 
         <table class="accounts-table" id="accountsTable">
           <thead>
             <tr>
-              <th style="width:40px;">
+              <th style="width:40px; text-align:center;">
                 <input type="checkbox" id="selectAllAccounts" onchange="toggleSelectAllAccounts()" title="全选/取消全选">
               </th>
               <th>邮箱</th>
@@ -322,13 +323,7 @@
               </div>
               <div style="display:flex; gap:8px;">
                 <!-- 添加按钮（下拉菜单） -->
-                <div style="position:relative;">
-                  <button class="modern-btn btn-secondary" onclick="toggleBinAddMenu()">添加 ▾</button>
-                  <div id="binAddMenu" class="action-menu" style="display:none; right:0; left:auto; min-width:120px;">
-                    <div class="action-menu-item" onclick="showBinForm()">手动添加</div>
-                    <div class="action-menu-item" onclick="showImportBinsForm()">批量导入</div>
-                  </div>
-                </div>
+                <button class="modern-btn btn-secondary" onclick="showImportBinsForm()">添加</button>
                 <!-- 更多操作（下拉菜单） -->
                 <div style="position:relative;">
                   <button class="modern-btn btn-secondary" onclick="toggleBinMoreMenu()">更多操作 ▾</button>
@@ -364,13 +359,7 @@
               </div>
               <div style="display:flex; gap:8px;">
                 <!-- 添加按钮（下拉菜单） -->
-                <div style="position:relative;">
-                  <button class="modern-btn btn-secondary" onclick="toggleCardAddMenu()">添加 ▾</button>
-                  <div id="cardAddMenu" class="action-menu" style="display:none; right:0; left:auto; min-width:120px;">
-                    <div class="action-menu-item" onclick="showCardForm()">手动添加</div>
-                    <div class="action-menu-item" onclick="showImportCardsForm()">批量导入</div>
-                  </div>
-                </div>
+                <button class="modern-btn btn-secondary" onclick="showImportCardsForm()">添加</button>
                 <!-- 更多操作（下拉菜单） -->
                 <div style="position:relative;">
                   <button class="modern-btn btn-secondary" onclick="toggleCardMoreMenu()">更多操作 ▾</button>
@@ -517,116 +506,41 @@
 
     </div>
 
-    <!-- 手动添加账号弹窗 -->
+  <!-- 添加账号弹窗 -->
   <div id="addAccountModal" class="modal-overlay">
-    <div class="modal-dialog">
-      <div class="modal-header" data-i18n="addAccountTitle">添加账号</div>
-      <div class="form-group">
-        <label data-i18n="email">邮箱</label>
-        <input type="email" id="manualEmail">
+    <div class="modal-dialog" style="max-width:550px; min-width:500px;">
+      <div class="modal-header">添加账号</div>
+      <div style="display:flex; align-items:center; gap:24px; margin-bottom:16px; padding:0 4px;">
+        <span style="font-size:14px; color:#1d1d1f;">添加方式</span>
+        <label style="display:inline-flex; align-items:center; gap:6px; cursor:pointer; font-size:14px;">
+          <input type="radio" name="addAccountType" value="password" checked onchange="switchAddAccountType('password')" style="width:16px; height:16px;"> 邮箱密码
+        </label>
+        <label style="display:inline-flex; align-items:center; gap:6px; cursor:pointer; font-size:14px;">
+          <input type="radio" name="addAccountType" value="token" onchange="switchAddAccountType('token')" style="width:16px; height:16px;"> Refresh Token
+        </label>
       </div>
-      <div class="form-group" style="margin-bottom:0;">
-        <label data-i18n="password">密码</label>
-        <input type="password" id="manualPassword">
-      </div>
-      <div class="modal-footer">
-        <button class="btn" onclick="hideAddAccountForm()" data-i18n="cancel">取消</button>
-        <button class="btn btn-success" onclick="addManualAccount()" data-i18n="add">添加</button>
-      </div>
-    </div>
-  </div>
-  <!-- Token导入账号弹窗 -->
-  <div id="importByTokenModal" class="modal-overlay">
-    <div class="modal-dialog" style="max-width:500px;">
-      <div class="modal-header">Token导入账号</div>
-      <div class="status-message status-info" style="margin: 0 0 16px 0; padding: 10px 12px; font-size: 12px;">
-        <strong>说明：</strong><br>
-        • 粘贴 Firebase Refresh Token 即可导入账号<br>
-        • 无需密码，自动获取账号信息和积分数据<br>
-        • 支持批量导入，每行一个 Token
-      </div>
-      <div class="form-group" style="margin-bottom:0;">
-        <label>Refresh Token（每行一个）</label>
-        <textarea id="importTokenInput" style="min-height: 150px; font-family: monospace; font-size: 12px; resize: vertical;" placeholder="粘贴 Refresh Token..."></textarea>
-      </div>
-      <div id="importTokenResult" style="margin-top: 12px;"></div>
-      <div class="modal-footer">
-        <button class="btn" onclick="hideImportByTokenForm()">取消</button>
-        <button class="btn btn-success" onclick="importAccountsByToken()">导入</button>
-      </div>
-    </div>
-  </div>
-
-  <!-- 导入账号弹窗 -->
-  <div id="importAccountModal" class="modal-overlay">
-    <div class="modal-dialog">
-      <div class="modal-header" data-i18n="importAccountsTitle">导入账号</div>
-      <div class="status-message status-info" style="margin: 0 0 16px 0; padding: 10px 12px; font-size: 12px;">
-        <strong>格式说明：</strong><br>
-        • 仅支持 JSON 数组格式<br>
-        • 格式：<code>[{"email": "邮箱", "password": "密码"}]</code><br>
-        • 示例：<code>[{"email": "123@qq.com", "password": "abc123"}]</code>
-      </div>
-      <div class="form-group">
-        <label data-i18n="selectFile">选择文件</label>
-        <input type="file" id="importFile" accept=".json" style="padding: 6px;">
-      </div>
-      <div class="form-group" style="margin-bottom:0;">
-        <label>预览内容</label>
-        <textarea id="importPreview" readonly style="min-height: 150px; font-family: monospace; font-size: 12px; resize: vertical;" placeholder="选择文件后将显示预览..."></textarea>
-      </div>
-      <div id="importResult" style="margin-top: 12px;"></div>
-      <div class="modal-footer">
-        <button class="btn" onclick="hideImportAccountForm()" data-i18n="cancel">取消</button>
-        <button class="btn btn-success" onclick="importAccounts()" data-i18n="import">导入</button>
-      </div>
-    </div>
-  </div>
-
-  <!-- 添加/编辑完整卡模态框 -->
-  <div id="cardFormModal" class="modal-overlay">
-    <div class="modal-dialog" style="max-width:450px;">
-      <div class="modal-header" id="cardFormTitle">添加完整卡</div>
-      
-      <div class="form-group">
-        <label>卡号 *</label>
-        <input type="text" id="cardNumber" placeholder="5447685740496193" maxlength="19">
-      </div>
-      <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px;">
-        <div class="form-group">
-          <label>过期日期 * (MM/YY)</label>
-          <input type="text" id="cardExpDate" placeholder="10/27" maxlength="5">
+      <div id="addAccountPasswordSection">
+        <div class="status-message status-info" style="margin: 0 0 16px 0; padding: 10px 12px; font-size: 12px;">
+          <strong>格式说明：</strong>每行一个账号：<code>邮箱 密码</code>（空格分隔）
         </div>
-        <div class="form-group">
-          <label>CVV *</label>
-          <input type="text" id="cardCvv" placeholder="842" maxlength="4">
+        <div class="form-group" style="margin-bottom:0;">
+          <label>输入账号信息（每行一个）</label>
+          <textarea id="addAccountInput" style="min-height: 150px; font-family: monospace; font-size: 12px; resize: vertical;" placeholder="test@example.com password123&#10;user@mail.com mypass&#10;..."></textarea>
         </div>
       </div>
-      <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px;">
-        <div class="form-group">
-          <label>余额 (USD)</label>
-          <input type="number" id="cardBalance" placeholder="10.00" step="0.01" min="0">
+      <div id="addAccountTokenSection" style="display:none;">
+        <div class="status-message status-info" style="margin: 0 0 16px 0; padding: 10px 12px; font-size: 12px;">
+          <strong>格式说明：</strong>每行一个 Refresh Token，无需密码
         </div>
-        <div class="form-group">
-          <label>绑定次数</label>
-          <select id="cardBindCount" style="width:100%; padding:10px 12px; border:1px solid #d2d2d7; border-radius:6px; font-size:14px;">
-            <option value="0">0 次</option>
-            <option value="1">1 次</option>
-            <option value="2">2 次</option>
-            <option value="3">3 次</option>
-            <option value="4">4 次</option>
-            <option value="5">5 次</option>
-          </select>
+        <div class="form-group" style="margin-bottom:0;">
+          <label>输入 Token（每行一个）</label>
+          <textarea id="addAccountTokenInput" style="min-height: 150px; font-family: monospace; font-size: 12px; resize: vertical;" placeholder="AMf-vBx...&#10;AMf-vBy...&#10;..."></textarea>
         </div>
       </div>
-      <div class="form-group">
-        <label>备注</label>
-        <input type="text" id="cardNote" placeholder="订阅用途">
-      </div>
-      <div id="cardFormError" style="color:#ff3b30; font-size:12px; margin-top:8px;"></div>
+      <div id="addAccountResult" style="margin-top: 12px;"></div>
       <div class="modal-footer">
-        <button class="btn" onclick="hideCardForm()">取消</button>
-        <button class="btn btn-primary" onclick="saveCard()">保存</button>
+        <button class="btn" onclick="hideAddAccountModal()">取消</button>
+        <button class="btn btn-success" onclick="doAddAccounts()">导入</button>
       </div>
     </div>
   </div>
@@ -637,46 +551,17 @@
       <div class="modal-header">导入虚拟卡</div>
       <div class="status-message status-info" style="margin:0 0 16px 0; padding:12px; font-size:12px; line-height:1.6;">
         <strong>格式说明：</strong><br>
-        • 每行一张卡：<code>卡号 过期日期(MMYY) CVV [绑定次数]</code><br>
-        • 示例：<code>5447685740496193 1027 842</code> 或 <code>5447685740496193 1027 842 2</code><br>
-        • 绑定次数为可选参数，不填默认为0次
-      </div>
-      <div class="form-group">
-        <label>选择 TXT 文件</label>
-        <input type="file" id="importCardsFile" accept=".txt" style="padding:8px; border:2px dashed #d2d2d7; border-radius:6px; background:#f8f9fa;">
+        • 每行一张卡：<code>卡号 过期日期(MMYY) CVV [绑定次数]（可选）</code><br>
+        • 示例：<code>5447685740496193 1027 842</code>
       </div>
       <div class="form-group" style="margin-bottom:0;">
-        <label>预览内容</label>
-        <textarea id="importCardsPreview" readonly style="min-height:180px; font-family:'Courier New',monospace; font-size:12px; resize:vertical; background:#f8f9fa;" placeholder="选择文件后将显示预览..."></textarea>
+        <label>输入卡片信息（每行一张卡）</label>
+        <textarea id="importCardsPreview" style="min-height:180px; font-family:'Courier New',monospace; font-size:12px; resize:vertical;" placeholder="5447685740496193 1027 842&#10;4111111111111111 0325 123&#10;..."></textarea>
       </div>
       <div id="importCardsResult" style="margin-top:12px;"></div>
       <div class="modal-footer">
         <button class="btn" onclick="hideImportCardsForm()">取消</button>
-        <button class="btn btn-success" onclick="importCards()">开始导入</button>
-      </div>
-    </div>
-  </div>
-
-  <!-- 添加/编辑BIN卡头模态框 -->
-  <div id="binFormModal" class="modal-overlay">
-    <div class="modal-dialog" style="max-width:450px;">
-      <div class="modal-header" id="binFormTitle">添加BIN卡头</div>
-      
-      <div class="form-group">
-        <label>BIN卡头 *</label>
-        <input type="text" id="binNumber" placeholder="538841xxxxxxxxxx" maxlength="16">
-        <div style="font-size:12px; color:#86868b; margin-top:4px;">
-          使用 'x' 表示随机数字，如：538841xxxxxxxxxx
-        </div>
-      </div>
-      <div class="form-group">
-        <label>备注</label>
-        <input type="text" id="binNote" placeholder="用途说明">
-      </div>
-      <div id="binFormError" style="color:#ff3b30; font-size:12px; margin-top:8px;"></div>
-      <div class="modal-footer">
-        <button class="btn" onclick="hideBinForm()">取消</button>
-        <button class="btn btn-primary" onclick="saveBin()">保存</button>
+        <button class="btn btn-success" onclick="importCards()">导入</button>
       </div>
     </div>
   </div>
@@ -690,18 +575,14 @@
         • 每行一个BIN：<code>BIN卡头 备注(可选)</code><br>
         • 示例：<code>538841xxxxxxxxxx 测试用途</code>
       </div>
-      <div class="form-group">
-        <label>选择 TXT 文件</label>
-        <input type="file" id="importBinsFile" accept=".txt" style="padding:8px; border:2px dashed #d2d2d7; border-radius:6px; background:#f8f9fa;">
-      </div>
       <div class="form-group" style="margin-bottom:0;">
-        <label>预览内容</label>
-        <textarea id="importBinsPreview" readonly style="min-height:180px; font-family:'Courier New',monospace; font-size:12px; resize:vertical; background:#f8f9fa;" placeholder="选择文件后将显示预览..."></textarea>
+        <label>输入BIN卡头（每行一个）</label>
+        <textarea id="importBinsPreview" style="min-height:180px; font-family:'Courier New',monospace; font-size:12px; resize:vertical;" placeholder="538841xxxxxxxxxx 测试用途&#10;411111xxxxxxxxxx&#10;..."></textarea>
       </div>
       <div id="importBinsResult" style="margin-top:12px;"></div>
       <div class="modal-footer">
         <button class="btn" onclick="hideImportBinsForm()">取消</button>
-        <button class="btn btn-success" onclick="importBins()">开始导入</button>
+        <button class="btn btn-success" onclick="importBins()">导入</button>
       </div>
     </div>
   </div>

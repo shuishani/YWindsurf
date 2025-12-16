@@ -51,11 +51,13 @@
     },
     "files": [
       "src/**/*",
+      "build/**/*",
       "node_modules/**/*",
       "package.json"
     ],
     "win": {
-      "target": "nsis"
+      "target": "nsis",
+      "icon": "src/assets/icon.ico"
     },
     "asar": false,
     "nsis": {
@@ -65,7 +67,8 @@
       "createStartMenuShortcut": true,
       "license": "LICENSE.txt",
       "artifactName": "YWindsurf-Setup.exe",
-      "unicode": true
+      "unicode": true,
+      "deleteAppDataOnUninstall": false
     }
   }
 }

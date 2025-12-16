@@ -201,7 +201,6 @@ async function deleteCard(cardId) {
 
 // 显示导入表单
 function showImportCardsForm() {
-  document.getElementById('importCardsFile').value = '';
   document.getElementById('importCardsPreview').value = '';
   document.getElementById('importCardsResult').innerHTML = '';
   document.getElementById('importCardsModal').style.display = 'flex';
@@ -218,7 +217,7 @@ async function importCards() {
   const resultEl = document.getElementById('importCardsResult');
 
   if (!text) {
-    resultEl.innerHTML = '<div class="status-message status-error">请选择文件</div>';
+    resultEl.innerHTML = '<div class="status-message status-error">请输入卡片信息</div>';
     return;
   }
 
@@ -329,27 +328,6 @@ function initCardEvents() {
     });
   }
 
-  // 导入虚拟卡文件监听
-  const importInput = document.getElementById('importCardsFile');
-  if (importInput) {
-    importInput.addEventListener('change', async (e) => {
-      const file = e.target.files[0];
-      if (!file) return;
-      const text = await file.text();
-      document.getElementById('importCardsPreview').value = text;
-    });
-  }
-  
-  // 导入BIN文件监听
-  const importBinsInput = document.getElementById('importBinsFile');
-  if (importBinsInput) {
-    importBinsInput.addEventListener('change', async (e) => {
-      const file = e.target.files[0];
-      if (!file) return;
-      const text = await file.text();
-      document.getElementById('importBinsPreview').value = text;
-    });
-  }
 }
 
 // DOM加载完成后初始化
@@ -509,7 +487,6 @@ async function deleteBin(binId) {
 
 // 显示导入BIN表单
 function showImportBinsForm() {
-  document.getElementById('importBinsFile').value = '';
   document.getElementById('importBinsPreview').value = '';
   document.getElementById('importBinsResult').innerHTML = '';
   document.getElementById('importBinsModal').style.display = 'flex';
@@ -526,7 +503,7 @@ async function importBins() {
   const resultEl = document.getElementById('importBinsResult');
 
   if (!text) {
-    resultEl.innerHTML = '<div class="status-message status-error">请选择文件</div>';
+    resultEl.innerHTML = '<div class="status-message status-error">请输入BIN卡头信息</div>';
     return;
   }
 
@@ -644,21 +621,17 @@ function exportSelectedCards() {
     return;
   }
   
-  const exportData = selected.map(card => ({
-    number: card.number,
-    expMonth: card.expMonth,
-    expYear: card.expYear,
-    cvv: card.cvv,
-    balance: card.balance || 0,
-    note: card.note || ''
-  }));
+  // TXT 格式：卡号 过期日期 CVV
+  const content = selected.map(card => {
+    const expDate = `${String(card.expMonth).padStart(2, '0')}/${card.expYear}`;
+    return `${card.number} ${expDate} ${card.cvv}`;
+  }).join('\n');
   
-  const content = JSON.stringify(exportData, null, 2);
-  const blob = new Blob([content], { type: 'application/json' });
+  const blob = new Blob([content], { type: 'text/plain' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
-  a.download = `cards-selected-${new Date().toISOString().split('T')[0]}.json`;
+  a.download = `cards_${new Date().toISOString().split('T')[0]}.txt`;
   a.click();
   URL.revokeObjectURL(url);
   
