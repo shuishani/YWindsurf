@@ -4,7 +4,7 @@
   "description": "Windsurf-Tool - 自动化管理 Windsurf 账号，支持批量注册、账号切换、到期提醒等功能",
   "main": "main.js",
   "scripts": {
-    "start": "electron .",
+    "start": "chcp 65001 >nul && electron .",
     "dev": "electron-vite dev",
     "build:vite": "electron-vite build",
     "build": "electron-builder",

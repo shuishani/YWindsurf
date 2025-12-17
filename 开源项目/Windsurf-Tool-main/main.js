@@ -648,11 +648,6 @@ ipcMain.on('quit-app', () => {
 });
 
 app.on('window-all-closed', () => {
-  // 清理定时器
-  if (versionCheckInterval) {
-    clearInterval(versionCheckInterval);
-  }
-  
   // 清理所有 IPC 监听器
   ipcMain.removeAllListeners('check-version');
   ipcMain.removeAllListeners('set-force-update-status');

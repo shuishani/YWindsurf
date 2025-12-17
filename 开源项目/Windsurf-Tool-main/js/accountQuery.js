@@ -44,27 +44,16 @@ const AccountQuery = {
     const WORKER_URL = CONSTANTS.WORKER_URL;
     
     try {
-      // 构建请求体
-      const requestBody = {
-        grant_type: 'refresh_token',
-        refresh_token: refreshToken,
-        api_key: FIREBASE_API_KEY
-      };
-      
-      if (email && password) {
-        requestBody.email = email;
-        requestBody.password = password;
-      }
-      
-      // 使用 Cloudflare Workers 中转（国内可访问）
+      // 使用 /refresh 端点刷新 Token（与 YWindsurf 项目一致）
       const response = await axios.post(
-        WORKER_URL,
-        requestBody,
+        `${WORKER_URL}/refresh`,
+        {
+          refresh_token: refreshToken,
+          api_key: FIREBASE_API_KEY
+        },
         {
           headers: {
-            'Content-Type': 'application/json',
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
-            // 'X-Secret-Key': CONSTANTS.WORKER_SECRET_KEY  // 已禁用密钥验证
+            'Content-Type': 'application/json'
           },
           timeout: CONFIG.REQUEST_TIMEOUT
         }
@@ -98,9 +87,7 @@ const AccountQuery = {
         {
           headers: {
             'Content-Type': 'application/json',
-            'X-Auth-Token': accessToken,
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-            'x-client-version': 'Chrome/JsCore/11.0.0/FirebaseCore-web'
+            'X-Auth-Token': accessToken
           },
           timeout: CONFIG.REQUEST_TIMEOUT
         }
