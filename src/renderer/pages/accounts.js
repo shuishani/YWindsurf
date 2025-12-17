@@ -1997,29 +1997,14 @@ async function switchAccount(email, password, refreshToken = null, apiKey = null
         window.refreshSystemInfo();
       }
       
-      // 如果 Windsurf 启动成功，延迟验证当前账号
+      // 如果 Windsurf 启动成功，延迟刷新并跳转首页
       if (result.windsurfStarted) {
-        setTimeout(async () => {
+        setTimeout(() => {
           // 刷新系统信息
           if (typeof window.refreshSystemInfo === 'function') {
             window.refreshSystemInfo();
           }
-          
-          // 验证当前登录账号是否为目标账号
-          try {
-            const systemInfo = await ipcRenderer.invoke('get-system-info');
-            if (systemInfo.success && systemInfo.currentAccount?.email) {
-              if (systemInfo.currentAccount.email !== email) {
-                showToast(`切号验证失败: 当前账号为 ${systemInfo.currentAccount.email}，目标账号为 ${email}`, 'error');
-                return;
-              }
-            }
-          } catch (error) {
-            // 验证失败不影响主流程，只记录日志
-            console.warn('切号验证异常:', error.message);
-          }
-          
-          // 验证通过，跳转首页
+          // 跳转首页
           if (typeof window.switchTab === 'function') {
             window.switchTab('home');
           }

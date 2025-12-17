@@ -137,7 +137,6 @@ class AccountSwitcher {
         
         transaction(); // 执行事务
         
-        this.logger.success('账号配置更新完成');
         return { success: true };
 
       } finally {
@@ -193,11 +192,7 @@ class AccountSwitcher {
         // 忽略错误
       }
 
-      if (clearedCount > 0) {
-        this.logger.info(`已清理 ${clearedCount} 项账号缓存`);
-      } else {
-        this.logger.info('无需清理账号缓存');
-      }
+      // 静默清理，不输出日志
       
     } catch (error) {
       this.logger.warning('清理账号缓存时出错，但不影响切号: ' + error.message);
@@ -246,17 +241,8 @@ class AccountSwitcher {
       let accountDetails = null;
       let newRefreshToken = null;
       
-      // 方式1: 使用缓存的 apiKey（最快，无需网络请求）
-      if (options.apiKey && options.name) {
-        accountDetails = {
-          email: email,
-          name: options.name,
-          apiKey: options.apiKey
-        };
-      }
-      
-      // 方式2: 使用 refreshToken 获取
-      if (!accountDetails && options.refreshToken) {
+      // 方式1: 使用 refreshToken 获取（优先，可验证账号有效性）
+      if (options.refreshToken) {
         const tokenResult = await getAccountCreditsByRefreshToken(
           options.refreshToken,
           email,
@@ -264,24 +250,39 @@ class AccountSwitcher {
         );
         if (tokenResult.success) {
           accountDetails = tokenResult.data;
+          if (!accountDetails.email) {
+            accountDetails.email = email;
+          }
           newRefreshToken = tokenResult.newRefreshToken;
         }
       }
       
-      // 方式3: 使用密码登录（兜底，仅当没有 refreshToken 时）
+      // 方式2: 使用密码登录（当 refreshToken 失效时）
       if (!accountDetails && password) {
         const creditsResult = await getAccountCredits(email, password);
         if (creditsResult.success) {
           accountDetails = creditsResult.data;
+          if (!accountDetails.email) {
+            accountDetails.email = email;
+          }
           newRefreshToken = creditsResult.refreshToken;
         } else {
-          throw new Error('登录失败: ' + creditsResult.error);
+          throw new Error('账号验证失败');
         }
+      }
+      
+      // 方式3: 使用缓存的 apiKey（仅当没有 refreshToken 和密码时的兜底）
+      if (!accountDetails && options.apiKey && options.name) {
+        accountDetails = {
+          email: email,
+          name: options.name,
+          apiKey: options.apiKey
+        };
       }
       
       // 检查是否获取到账号信息
       if (!accountDetails || !accountDetails.apiKey) {
-        throw new Error('获取账号信息失败，请检查账号状态');
+        throw new Error('账号已失效，请刷新账号');
       }
       
       // 步骤2-3: 构建和加密数据（内部完成）
@@ -315,7 +316,6 @@ class AccountSwitcher {
 
       // 清理缓存文件
       await this.clearWindsurfCache();
-      this.logger.success('账号配置保存成功');
       await this.verifyAccountSwitch(); // 静默验证，不影响主流程
 
       // 等待配置生效
@@ -325,17 +325,15 @@ class AccountSwitcher {
       this.sendProgress(5, 6, '启动 Windsurf...');
       try {
         const startResult = await manager.startWindsurf();
-        if (startResult) {
-          this.logger.success('Windsurf 已启动');
-        } else {
+        if (!startResult) {
           this.logger.warning('Windsurf 启动失败，请手动启动');
         }
       } catch (error) {
-        this.logger.warning('自动启动失败，请手动启动 Windsurf: ' + error.message);
+        this.logger.warning('Windsurf 启动失败，请手动启动');
       }
 
       this.sendProgress(6, 6, '完成');
-      this.logger.complete('账号切换完成，当前账号: ' + accountDetails.email);
+      this.logger.complete('切号完成: ' + accountDetails.email);
 
       return {
         success: true,

@@ -142,13 +142,12 @@ class WindsurfManagerWindows {
    */
   async closeWindsurf() {
     try {
-      this.logger.system('正在关闭Windsurf');
-      
       const isRunning = await this.checkWindsurfRunning();
       if (!isRunning) {
-        this.logger.info('Windsurf未运行');
         return true;
       }
+      
+      this.logger.info('正在关闭 Windsurf...');
       
       // 关闭前缓存运行路径（用于后续启动）
       const runningPath = await this.getRunningWindsurfPath();
@@ -156,16 +155,13 @@ class WindsurfManagerWindows {
         cachedWindsurfPath = runningPath;
       }
       
-      this.logger.info('检测到Windsurf正在运行,开始关闭');
-      
       // 正常关闭
       await execPromise('taskkill /IM Windsurf.exe').catch(() => {});
       await this.sleep(2000);
       
       // 检查是否成功关闭
-      const stillRunning1 = await this.checkWindsurfRunning();
-      if (!stillRunning1) {
-        this.logger.success('Windsurf已成功关闭');
+      if (!await this.checkWindsurfRunning()) {
+        this.logger.success('Windsurf 已关闭');
         return true;
       }
       
@@ -174,10 +170,10 @@ class WindsurfManagerWindows {
       await execPromise('taskkill /F /IM "Windsurf Helper.exe"').catch(() => {});
       await execPromise('taskkill /F /IM "Windsurf Helper (GPU).exe"').catch(() => {});
       await execPromise('taskkill /F /IM "Windsurf Helper (Renderer).exe"').catch(() => {});
-      await this.sleep(3000); // 增加等待时间
+      await this.sleep(3000);
       
       if (!await this.checkWindsurfRunning()) {
-        this.logger.success('Windsurf已强制关闭');
+        this.logger.success('Windsurf 已关闭');
         return true;
       }
       
@@ -185,11 +181,10 @@ class WindsurfManagerWindows {
       await execPromise('wmic process where "name=\'Windsurf.exe\'" call terminate').catch(() => {});
       await this.sleep(2000);
       
-      this.logger.warning('Windsurf关闭流程完成，继续执行');
       return true;
       
     } catch (error) {
-      this.logger.error('关闭Windsurf失败', error.message);
+      this.logger.error('关闭 Windsurf 失败');
       return false;
     }
   }
@@ -871,18 +866,15 @@ class WindsurfManagerWindows {
       child.unref(); // 允许父进程退出
       
       // 等待 Windsurf 启动并完全加载
-      this.log('等待 Windsurf 启动...');
       await this.sleep(5000);
       
       // 验证是否成功启动
       const isNowRunning = await this.checkWindsurfRunning();
       if (isNowRunning) {
-        this.log('Windsurf 启动成功');
-        this.log('等待 Windsurf 完全加载账号信息...');
         await this.sleep(3000); // 额外等待账号信息加载
         return true;
       } else {
-        this.log(' Windsurf 可能启动失败');
+        this.log('Windsurf 可能启动失败');
         return false;
       }
       
