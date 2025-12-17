@@ -36,9 +36,11 @@ async function getSettings() {
 /**
  * 根据ID选择指定的虚拟卡
  * @param {string} cardId - 卡ID
+ * @param {Object} logger - 可选的日志对象
  * @returns {Promise<Object|null>} 返回卡信息或null
  */
-async function selectCardById(cardId) {
+async function selectCardById(cardId, logger = null) {
+  const log = logger || bindLogger;
   try {
     const data = await fs.readFile(CARDS_FILE, 'utf-8');
     const cards = JSON.parse(data);
@@ -48,7 +50,7 @@ async function selectCardById(cardId) {
     if (card) {
       // 完整卡字段是 number，不是 cardNumber
       const cardDisplay = card.type === 'bin' ? card.bin : (card.number || card.cardNumber || '完整卡');
-      bindLogger.success(`找到卡: ${cardDisplay}`);
+      log.success(`找到卡: ${cardDisplay}`);
       return {
         card: card,
         type: card.type
@@ -56,11 +58,11 @@ async function selectCardById(cardId) {
     }
     
     // 没找到，列出所有卡的ID
-    bindLogger.warning(`未找到ID为 ${cardId} 的卡`);
-    bindLogger.info(`可用卡ID: ${cards.map(c => c.id).join(', ')}`);
+    log.warning(`未找到ID为 ${cardId} 的卡`);
+    log.info(`可用卡ID: ${cards.map(c => c.id).join(', ')}`);
     return null;
   } catch (error) {
-    bindLogger.error(`读取虚拟卡失败: ${error.message}`);
+    log.error(`读取虚拟卡失败: ${error.message}`);
     return null;
   }
 }
@@ -68,9 +70,11 @@ async function selectCardById(cardId) {
 /**
  * 从虚拟卡库选择可用的卡（自动选择）
  * 优先级：BIN卡头 > 未绑定的完整卡 > 已绑定的完整卡
+ * @param {Object} logger - 可选的日志对象
  * @returns {Promise<Object|null>} 返回卡信息或null
  */
-async function selectAvailableCard() {
+async function selectAvailableCard(logger = null) {
+  const log = logger || bindLogger;
   try {
     const data = await fs.readFile(CARDS_FILE, 'utf-8');
     const cards = JSON.parse(data);
@@ -79,6 +83,7 @@ async function selectAvailableCard() {
     const binCard = cards.find(c => c.type === 'bin');
     
     if (binCard) {
+      log.success(`找到卡: ${binCard.bin}`);
       return {
         card: binCard,
         type: 'bin'
@@ -92,6 +97,7 @@ async function selectAvailableCard() {
     );
     
     if (unboundFullCard) {
+      log.success(`找到卡: ${unboundFullCard.number || '完整卡'}`);
       return {
         card: unboundFullCard,
         type: 'full'
@@ -101,17 +107,18 @@ async function selectAvailableCard() {
     // 3. 最后选择已绑定的完整卡（不推荐）
     const boundFullCard = cards.find(c => c.type === 'full');
     if (boundFullCard) {
+      log.success(`找到卡: ${boundFullCard.number || '完整卡'}`);
       return {
         card: boundFullCard,
         type: 'full'
       };
     }
     
-    bindLogger.warning('没有找到可用的卡（BIN或完整卡）');
+    log.warning('没有找到可用的卡（BIN或完整卡）');
     return null;
   } catch (error) {
-    bindLogger.error(`读取虚拟卡失败: ${error.message}`);
-    bindLogger.info(`文件路径: ${CARDS_FILE}`);
+    log.error(`读取虚拟卡失败: ${error.message}`);
+    log.info(`文件路径: ${CARDS_FILE}`);
     return null;
   }
 }
@@ -216,13 +223,14 @@ async function saveBinGeneratedCard(cardInfo) {
 /**
  * 后台自动检测成功页面（不阻塞）
  */
-async function startAutoDetection(email, page, browser, cardId = null, cardInfo = null) {
+async function startAutoDetection(email, page, browser, cardId = null, cardInfo = null, taskIndex = null) {
   const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+  const taskPrefix = taskIndex ? `[任务${taskIndex}] ` : '';
   
   // 异步执行检测
   (async () => {
     try {
-      bindLogger.info(`后台自动检测已启动...`);
+      bindLogger.info(`${taskPrefix}后台自动检测已启动...`);
       
       while (true) {
         try {
@@ -251,6 +259,10 @@ async function startAutoDetection(email, page, browser, cardId = null, cardInfo 
             
             // 更新账号绑卡状态
             await updateAccountBindStatus(email, true);
+            
+            // 通知前端刷新数据和移除待确认项
+            mainWindow.webContents.send('refresh-data');
+            mainWindow.webContents.send('binding-confirmed', { email, success: true });
             
             // 关闭浏览器
             try {
@@ -409,38 +421,43 @@ function initStripeHandlers(win) {
     
     // 单个账号绑卡任务
     async function bindSingleAccount(acc, taskIndex) {
-      const taskLog = (type, msg, detail = '') => {
-        const prefix = `[任务${taskIndex}]`;
-        if (type === 'info') bindLogger.info(`${prefix} ${msg}`, detail);
-        else if (type === 'error') bindLogger.error(`${prefix} ${msg}`, detail);
-        else if (type === 'success') bindLogger.success(`${prefix} ${msg}`);
-        else if (type === 'progress') bindLogger.progress(`${prefix} ${msg}`);
+      const prefix = `[任务${taskIndex}]`;
+      // 创建带任务前缀的日志对象
+      const taskLogger = {
+        info: (msg, detail) => bindLogger.info(`${prefix} ${msg}`, detail),
+        error: (msg, detail) => bindLogger.error(`${prefix} ${msg}`, detail),
+        success: (msg) => bindLogger.success(`${prefix} ${msg}`),
+        progress: (msg) => bindLogger.progress(`${prefix} ${msg}`),
+        warning: (msg) => bindLogger.warning(`${prefix} ${msg}`)
       };
       
       try {
-        taskLog('info', `开始绑卡 ${acc.email}`);
+        taskLogger.info(`开始绑卡 ${acc.email}`);
         
-        // 选择虚拟卡
+        // 选择虚拟卡（传入 taskLogger）
         const cardData = selectedCardId && selectedCardId !== 'auto' 
-          ? await selectCardById(selectedCardId)
-          : await selectAvailableCard();
+          ? await selectCardById(selectedCardId, taskLogger)
+          : await selectAvailableCard(taskLogger);
         
         if (!cardData) {
-          taskLog('error', '没有可用的虚拟卡');
+          taskLogger.error('没有可用的虚拟卡');
           return { success: false, error: '没有可用的虚拟卡' };
         }
         
         const cardInfo = generateCardInfo(cardData);
         
         // 获取支付链接
+        taskLogger.progress('正在获取支付链接...');
         const { getPaymentLink } = require('./stripe-api');
         const linkResult = await getPaymentLink(acc.email, acc.password);
         
         if (!linkResult.success) {
-          taskLog('error', '获取链接失败', linkResult.error);
+          taskLogger.error('获取链接失败', linkResult.error);
           await updateAccountBindStatus(acc.email, false);
           return { success: false, error: linkResult.error };
         }
+        
+        taskLogger.success('成功获取支付链接');
         
         // 打开浏览器
         const { connect } = require('puppeteer-real-browser');
@@ -478,7 +495,7 @@ function initStripeHandlers(win) {
           });
           
           mainWindow.webContents.send('show-binding-actions', { email: acc.email, password: acc.password });
-          startAutoDetection(acc.email, page, browser, cardInfo.cardId, cardInfo);
+          startAutoDetection(acc.email, page, browser, cardInfo.cardId, cardInfo, taskIndex);
           return { success: false, pending: true };
         } else if (bindResult.error) {
           failedAccountBrowsers.set(acc.email, { page, browser });
@@ -526,7 +543,6 @@ function initStripeHandlers(win) {
     }
     
     bindLogger.success(`批量绑卡完成！成功 ${successCount} 个，失败 ${failCount} 个，待确认 ${pendingCount} 个`);
-    bindLogger.info('后台自动检测已启动...');
     
     mainWindow.webContents.send('refresh-data');
     

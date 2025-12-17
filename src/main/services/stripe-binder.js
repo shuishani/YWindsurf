@@ -129,7 +129,7 @@ async function bindCard(page, logCallback = null, customCardInfo = null, taskInd
     warning: (msg, detail) => logger.warning(`${taskPrefix}${msg}`, detail),
     error: (msg, detail) => logger.error(`${taskPrefix}${msg}`, detail),
     success: (msg, detail) => logger.success(`${taskPrefix}${msg}`, detail),
-    step: (num, msg) => logger.step(num, `${taskPrefix}${msg}`),
+    step: (num, msg) => logger.info(`${taskPrefix}步骤${num}: ${msg}`),
     progress: (msg, detail) => logger.progress(`${taskPrefix}${msg}`, detail),
     start: (msg) => logger.start(`${taskPrefix}${msg}`)
   };
@@ -239,13 +239,19 @@ async function fillAndSubmitCard(page, cardInfo, addressInfo, logger) {
     
     // 辅助函数：稳定输入
     async function stableType(selector, value, description) {
-      const input = await page.$(selector);
-      if (input) {
-        await input.click({ clickCount: 3 }); // 三击选中全部
-        await sleep(200);
-        await page.keyboard.type(value, { delay: 50 });
-        await sleep(500);
-        logger.progress(`${description}: ${value}`);
+      try {
+        const input = await page.$(selector);
+        if (input) {
+          await input.click({ clickCount: 3 }); // 三击选中全部
+          await sleep(300);
+          await page.keyboard.type(value, { delay: 80 });
+          await sleep(600);
+          logger.progress(`${description}: ${value}`);
+        } else {
+          logger.warning(`未找到输入框: ${description}`);
+        }
+      } catch (e) {
+        logger.warning(`输入失败: ${description} - ${e.message}`);
       }
     }
     

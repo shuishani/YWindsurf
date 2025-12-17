@@ -107,9 +107,6 @@ function processAccountCredits(usedCredits, totalCredits, usageUnknown = false, 
   const rawUsed = usedCredits || 0;
   const total = totalCredits || 0;
   
-  // 积分显示逻辑：使用取模运算
-  const used = total > 0 ? (rawUsed % total) : rawUsed;
-  
   // 1. 账号类型判断 - 直接使用 planType 字段，与后端数据保持一致
   let accountType = planType || 'Free';
   let typeClass = 'badge-type-free';
@@ -140,6 +137,11 @@ function processAccountCredits(usedCredits, totalCredits, usageUnknown = false, 
   }
   
   // 2. 积分计算
+  // Pro/Teams/Enterprise 账号每月重置，使用取模运算
+  // Trial/Free 账号不重置，直接显示
+  const needsModulo = ['Pro', 'Teams', 'Enterprise'].includes(accountType);
+  const used = (needsModulo && total > 0) ? (rawUsed % total) : rawUsed;
+  
   let hasCreditsData = total > 0;
   let percent = 0;
   let color = '#86868b'; // 默认灰色

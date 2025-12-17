@@ -142,8 +142,7 @@ function registerAllIPC(app, mainWindow) {
       }
       
       account.id = Date.now().toString();
-      // 不自动设置 createdAt，让账号保持未知状态，等刷新后获取真实数据
-      // 只有通过刷新操作才会设置真实的创建时间
+      account.createdAt = new Date().toISOString();  // 设置添加时间
       accounts.push(account);
       
       await fs.writeFile(getAccountsFile(), JSON.stringify(accounts, null, 2));
@@ -228,7 +227,9 @@ function registerAllIPC(app, mainWindow) {
       };
       
       // 执行自动切号（优先级：apiKey > refreshToken > password）
-      const switchResult = await switcher.switchAccountAdvanced(account.email, account.password, options);
+      // 只有当密码有效时才传入，避免用无效密码尝试登录
+      const validPassword = account.password && account.password.trim() ? account.password : null;
+      const switchResult = await switcher.switchAccountAdvanced(account.email, validPassword, options);
       
       // 如果切号成功且返回了新的 refreshToken，更新账号文件
       if (switchResult.success && switchResult.newRefreshToken) {
@@ -745,7 +746,10 @@ function registerAllIPC(app, mainWindow) {
         account.monthlyFlowCredits = data.monthlyFlowCredits;
         account.accountType = data.accountType;
         account.planType = data.planType;
-        account.createdAt = data.createdAt || account.createdAt;
+        // 如果没有 createdAt，设置当前时间
+        if (!account.createdAt) {
+          account.createdAt = new Date().toISOString();
+        }
         account.expiresAt = data.expiresAt || account.expiresAt;
         if (data.apiKey) {
           account.apiKey = data.apiKey;
@@ -755,13 +759,10 @@ function registerAllIPC(app, mainWindow) {
         }
         
         // 根据积分情况更新绑卡状态
-        if (account.monthlyPromptCredits >= 500) {
-          account.cardBound = true;
-        } else if (account.monthlyPromptCredits === 100) {
-          account.cardBound = true;
-        } else {
-          account.cardBound = false;
-        }
+        // Free 未绑卡: 0 积分
+        // Trial (Free 已绑卡): 100 积分
+        // Pro/Teams/Enterprise: 500+ 积分
+        account.cardBound = account.monthlyPromptCredits >= 100;
         account.needsManualBinding = false;
         
         // 保存到文件

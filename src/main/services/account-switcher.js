@@ -92,7 +92,6 @@ class AccountSwitcher {
       scopes: []
     }];
 
-    this.logger.info(`获取数据 - 用户名: ${accountDetails.name}, API Key: ${accountDetails.apiKey ? '已获取' : '未获取'}`);
     return sessionsData;
   }
 
@@ -242,7 +241,6 @@ class AccountSwitcher {
   async switchAccountAdvanced(email, password, options = {}) {
     try {
       this.logger.start('开始切换账号');
-      this.logger.info(`目标账号: ${email}`);
       
       const { getAccountCredits, getAccountCreditsByRefreshToken } = require('../../shared/lib/windsurf-api');
       let accountDetails = null;
@@ -257,7 +255,7 @@ class AccountSwitcher {
         };
       }
       
-      // 方式2: 使用 refreshToken 获取（传入 email 和 password 用于回退）
+      // 方式2: 使用 refreshToken 获取
       if (!accountDetails && options.refreshToken) {
         const tokenResult = await getAccountCreditsByRefreshToken(
           options.refreshToken,

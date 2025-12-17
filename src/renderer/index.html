@@ -206,10 +206,7 @@
             <button class="compact-btn btn-success" onclick="startApiBatchBinding()">开始绑卡</button>
           </div>
           <div class="operation-col col-2">
-            <div class="card-selector-wrapper">
-              <button class="compact-btn btn-secondary" onclick="toggleCardSelector()" id="selectedCardButton">选择虚拟卡 ▾</button>
-              <div id="cardSelectorDropdown" class="card-selector-dropdown" style="display: none;"></div>
-            </div>
+            <button class="compact-btn btn-secondary" onclick="toggleCardSelector()" id="selectedCardButton">选择虚拟卡</button>
           </div>
           <div class="operation-col col-3">
             <button class="compact-btn btn-secondary" onclick="startBatchCancel()">取消订阅</button>
@@ -241,15 +238,19 @@
             </div>
           </div>
           <div style="display:flex; gap:8px; align-items:center;">
-            <!-- 快速选择下拉菜单 -->
+            <!-- 筛选下拉菜单 -->
             <div class="dropdown" style="position:relative;">
-              <button class="modern-btn btn-secondary" onclick="toggleSelectMenu(event)" style="display:inline-flex; align-items:center; gap:4px;">
-                选择 ▾
+              <button class="modern-btn btn-secondary" onclick="toggleFilterMenu(event)" style="display:inline-flex; align-items:center; gap:4px;">
+                <span id="filterLabel">筛选</span> ▾
               </button>
-              <div id="selectMenu" style="display:none; position:absolute; top:100%; right:0; margin-top:4px; background:white; border:1px solid #e5e5ea; border-radius:8px; box-shadow:0 4px 12px rgba(0,0,0,0.15); min-width:120px; z-index:1000; overflow:hidden;">
-                <div onclick="selectUnboundAccounts(); hideSelectMenu();" style="padding:8px 12px; cursor:pointer; font-size:12px; border-bottom:1px solid #f5f5f7;">未绑卡账号</div>
-                <div onclick="selectAccountsForCleanup(); hideSelectMenu();" style="padding:8px 12px; cursor:pointer; font-size:12px; border-bottom:1px solid #f5f5f7;">可清理账号</div>
-                <div onclick="invertSelection(); hideSelectMenu();" style="padding:8px 12px; cursor:pointer; font-size:12px;">反选</div>
+              <div id="filterMenu" style="display:none; position:absolute; top:100%; right:0; margin-top:4px; background:white; border:1px solid #e5e5ea; border-radius:8px; box-shadow:0 4px 12px rgba(0,0,0,0.15); min-width:120px; z-index:1000; overflow:hidden;">
+                <div onclick="filterAccountsByType('all'); hideFilterMenu();" style="padding:8px 12px; cursor:pointer; font-size:12px; border-bottom:1px solid #f5f5f7;">全部</div>
+                <div onclick="filterAccountsByType('Enterprise'); hideFilterMenu();" style="padding:8px 12px; cursor:pointer; font-size:12px; border-bottom:1px solid #f5f5f7;">Enterprise</div>
+                <div onclick="filterAccountsByType('Teams'); hideFilterMenu();" style="padding:8px 12px; cursor:pointer; font-size:12px; border-bottom:1px solid #f5f5f7;">Teams</div>
+                <div onclick="filterAccountsByType('Pro'); hideFilterMenu();" style="padding:8px 12px; cursor:pointer; font-size:12px; border-bottom:1px solid #f5f5f7;">Pro</div>
+                <div onclick="filterAccountsByType('Trial'); hideFilterMenu();" style="padding:8px 12px; cursor:pointer; font-size:12px; border-bottom:1px solid #f5f5f7;">Trial</div>
+                <div onclick="filterAccountsByType('Free'); hideFilterMenu();" style="padding:8px 12px; cursor:pointer; font-size:12px; border-bottom:1px solid #f5f5f7;">Free</div>
+                <div onclick="filterAccountsByType('cleanup'); hideFilterMenu();" style="padding:8px 12px; cursor:pointer; font-size:12px;">可清理</div>
               </div>
             </div>
             <!-- 添加按钮 -->
@@ -257,21 +258,11 @@
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
               添加
             </button>
-            <!-- 导出下拉菜单 -->
-            <div class="dropdown" style="position:relative;">
-              <button class="modern-btn btn-secondary" onclick="toggleExportMenu(event)" style="display:inline-flex; align-items:center; gap:4px;">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
-                导出 ▾
-              </button>
-              <div id="exportMenu" style="display:none; position:absolute; top:100%; right:0; margin-top:4px; background:white; border:1px solid #e5e5ea; border-radius:8px; box-shadow:0 4px 12px rgba(0,0,0,0.15); min-width:100px; z-index:1000; overflow:hidden;">
-                <div onclick="exportAccountsByType('all'); hideExportMenu();" style="padding:8px 12px; cursor:pointer; font-size:12px; border-bottom:1px solid #f5f5f7;">全部导出</div>
-                <div onclick="exportAccountsByType('Enterprise'); hideExportMenu();" style="padding:8px 12px; cursor:pointer; font-size:12px; border-bottom:1px solid #f5f5f7;">仅 Enterprise</div>
-                <div onclick="exportAccountsByType('Teams'); hideExportMenu();" style="padding:8px 12px; cursor:pointer; font-size:12px; border-bottom:1px solid #f5f5f7;">仅 Teams</div>
-                <div onclick="exportAccountsByType('Pro'); hideExportMenu();" style="padding:8px 12px; cursor:pointer; font-size:12px; border-bottom:1px solid #f5f5f7;">仅 Pro</div>
-                <div onclick="exportAccountsByType('Trial'); hideExportMenu();" style="padding:8px 12px; cursor:pointer; font-size:12px; border-bottom:1px solid #f5f5f7;">仅 Trial</div>
-                <div onclick="exportAccountsByType('Free'); hideExportMenu();" style="padding:8px 12px; cursor:pointer; font-size:12px;">仅 Free</div>
-              </div>
-            </div>
+            <!-- 导出按钮（导出选中账号） -->
+            <button class="modern-btn btn-secondary" onclick="exportSelectedAccounts()" style="display:inline-flex; align-items:center; gap:4px;">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+              导出
+            </button>
             <div style="width:1px; height:20px; background:#d2d2d7; margin:0 4px;"></div>
             <!-- 刷新按钮 -->
             <button class="modern-btn btn-icon" onclick="refreshSelectedAccounts()" title="刷新选中账号" style="width:36px; height:36px; padding:0; display:inline-flex; align-items:center; justify-content:center;">
@@ -290,7 +281,7 @@
               <th style="width:40px; text-align:center;">
                 <input type="checkbox" id="selectAllAccounts" onchange="toggleSelectAllAccounts()" title="全选/取消全选">
               </th>
-              <th>邮箱</th>
+              <th style="width:150px;">邮箱</th>
               <th>类型</th>
               <th>积分</th>
               <th>绑卡状态</th>
@@ -648,7 +639,7 @@
       <!-- 待确认账号列表 -->
       <div id="pendingAccountsSection" style="padding:0 20px 16px 20px; display:none;">
         <div style="font-size:13px; color:#1d1d1f; font-weight:600; margin-bottom:8px;">待确认账号 (<span id="pendingAccountsCount">0</span>)</div>
-        <div id="pendingAccountsList" style="background:#f8f9fa; border:1px solid #e5e5ea; border-radius:6px;">
+        <div id="pendingAccountsList" style="background:#f8f9fa; border:1px solid #e5e5ea; border-radius:6px; max-height:200px; overflow-y:auto;">
           <!-- 动态渲染待确认账号 -->
         </div>
       </div>
@@ -724,6 +715,76 @@
     </div>
   </div>
 
+
+  <!-- 编辑完整卡弹窗 -->
+  <div id="cardFormModal" class="modal-overlay" style="display:none;">
+    <div class="modal-dialog" style="max-width:450px;">
+      <div class="modal-header" style="display:flex; justify-content:space-between; align-items:center;">
+        <h3 id="cardFormTitle" style="margin:0;">编辑完整卡</h3>
+        <button onclick="hideCardForm()" style="background:none; border:none; font-size:24px; cursor:pointer; color:#86868b;">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div class="form-group">
+          <label>卡号</label>
+          <input type="text" id="cardNumber" placeholder="输入卡号（13-19位）" maxlength="19">
+        </div>
+        <div class="form-group">
+          <label>过期日期</label>
+          <input type="text" id="cardExpDate" placeholder="MM/YY" maxlength="5">
+        </div>
+        <div class="form-group">
+          <label>CVV</label>
+          <input type="text" id="cardCvv" placeholder="3-4位" maxlength="4">
+        </div>
+        <div class="form-group">
+          <label>余额</label>
+          <input type="number" id="cardBalance" placeholder="余额" step="0.01">
+        </div>
+        <div class="form-group">
+          <label>绑定次数</label>
+          <input type="number" id="cardBindCount" placeholder="绑定次数" value="0" min="0">
+        </div>
+        <div class="form-group">
+          <label>备注</label>
+          <input type="text" id="cardNote" placeholder="备注（可选）">
+        </div>
+        <div id="cardFormError" style="color:#ff3b30; font-size:12px; margin-top:8px;"></div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" onclick="hideCardForm()">取消</button>
+        <button class="btn btn-primary" onclick="saveCard()">保存</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 编辑BIN卡头弹窗 -->
+  <div id="binFormModal" class="modal-overlay" style="display:none;">
+    <div class="modal-dialog" style="max-width:400px;">
+      <div class="modal-header" style="display:flex; justify-content:space-between; align-items:center;">
+        <h3 id="binFormTitle" style="margin:0;">编辑BIN卡头</h3>
+        <button onclick="hideBinForm()" style="background:none; border:none; font-size:24px; cursor:pointer; color:#86868b;">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div class="form-group">
+          <label>BIN卡头</label>
+          <input type="text" id="binNumber" placeholder="输入BIN卡头（6-8位）" maxlength="8">
+        </div>
+        <div class="form-group">
+          <label>绑定次数</label>
+          <input type="number" id="binBindCount" placeholder="绑定次数" value="0" min="0">
+        </div>
+        <div class="form-group">
+          <label>备注</label>
+          <input type="text" id="binNote" placeholder="备注（可选）">
+        </div>
+        <div id="binFormError" style="color:#ff3b30; font-size:12px; margin-top:8px;"></div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" onclick="hideBinForm()">取消</button>
+        <button class="btn btn-primary" onclick="saveBin()">保存</button>
+      </div>
+    </div>
+  </div>
 
   <!-- 模块化渲染进程 -->
   <script src="app.js"></script>

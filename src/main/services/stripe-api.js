@@ -40,8 +40,7 @@ function encodeVarintField(fieldNumber, value) {
  */
 async function getPaymentLink(email, password) {
   try {
-    // 简化日志，只显示关键步骤
-    logger.progress('正在获取支付链接...');
+    // 日志已在调用处输出，这里不再重复
     const loginUrl = CONSTANTS.WORKER_URL + '/login';
     
     const loginResponse = await axios.post(loginUrl, {
@@ -128,7 +127,7 @@ async function getPaymentLink(email, password) {
         end++;
       }
       const paymentLink = rawText.substring(start, end);
-      logger.success('成功获取支付链接');
+      // 日志已在调用处输出
       return { success: true, paymentLink };
     }
     

@@ -385,6 +385,7 @@ function showBinForm() {
   editingBinId = null;
   document.getElementById('binFormTitle').textContent = '添加BIN卡头';
   document.getElementById('binNumber').value = '';
+  document.getElementById('binBindCount').value = '0';
   document.getElementById('binNote').value = '';
   document.getElementById('binFormError').textContent = '';
   document.getElementById('binFormModal').style.display = 'flex';
@@ -404,6 +405,7 @@ function editBin(binId) {
   editingBinId = binId;
   document.getElementById('binFormTitle').textContent = '编辑BIN卡头';
   document.getElementById('binNumber').value = bin.bin || '';
+  document.getElementById('binBindCount').value = bin.bindCount !== undefined ? bin.bindCount : 0;
   document.getElementById('binNote').value = bin.note || '';
   document.getElementById('binFormError').textContent = '';
   document.getElementById('binFormModal').style.display = 'flex';
@@ -412,6 +414,7 @@ function editBin(binId) {
 // 保存BIN
 async function saveBin() {
   const binNumber = document.getElementById('binNumber').value.trim();
+  const bindCount = parseInt(document.getElementById('binBindCount').value) || 0;
   const note = document.getElementById('binNote').value.trim();
   const errorEl = document.getElementById('binFormError');
 
@@ -441,7 +444,7 @@ async function saveBin() {
     id: editingBinId || Date.now().toString(),
     type: 'bin',
     bin: binNumber.toLowerCase(),
-    bindCount: editingBinId ? virtualCards.find(c => c.id === editingBinId).bindCount : 0,
+    bindCount: bindCount,
     note,
     createdAt: editingBinId ? virtualCards.find(c => c.id === editingBinId).createdAt : new Date().toISOString()
   };

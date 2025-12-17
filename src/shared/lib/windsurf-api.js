@@ -168,10 +168,10 @@ async function getAccountCredits(email, password) {
       data: {
         email: fullInfo.user?.email || email,
         name: fullInfo.user?.name || fullInfo.user?.displayName || email.split('@')[0],
-        usedPromptCredits: fullInfo.usage.displayPromptUsed || 0,
-        monthlyPromptCredits: fullInfo.usage.displayPromptLimit || 500,
-        usedFlowCredits: fullInfo.usage.displayFlowUsed || 0,
-        monthlyFlowCredits: fullInfo.usage.displayFlowLimit || 500,
+        usedPromptCredits: fullInfo.usage.displayPromptUsed ?? 0,
+        monthlyPromptCredits: fullInfo.usage.displayPromptLimit ?? 0,
+        usedFlowCredits: fullInfo.usage.displayFlowUsed ?? 0,
+        monthlyFlowCredits: fullInfo.usage.displayFlowLimit ?? 0,
         isPro: fullInfo.isPro || false,
         accountType: fullInfo.isPro ? 'PRO' : 'Free',
         planType: fullInfo.usage.planType || 'Free',  // 账号类型 (Free/Trial/Pro/Teams/Enterprise)
@@ -207,10 +207,8 @@ async function getAccountCreditsByRefreshToken(refreshToken, email = null, passw
     let newRefreshToken = null;
     let usedFallback = false;
     
-    // 2. 如果 Token 刷新失败，尝试用邮箱密码重新登录
+    // 2. 如果 Token 刷新失败，尝试用邮箱密码重新登录（仅当有密码时）
     if (!tokenResult.success) {
-      logger.warning('Token刷新失败，尝试用密码重新登录...');
-      
       if (email && password) {
         const loginResult = await loginWithEmailPassword(email, password);
         if (loginResult.success) {
@@ -221,11 +219,11 @@ async function getAccountCreditsByRefreshToken(refreshToken, email = null, passw
           };
           newRefreshToken = loginResult.refreshToken;
           usedFallback = true;
-          logger.success('密码登录成功');
         } else {
-          return { success: false, error: 'Token刷新失败且密码登录失败: ' + loginResult.error };
+          return { success: false, error: 'Token刷新失败，密码登录也失败: ' + loginResult.error };
         }
       } else {
+        // 没有密码，直接返回 Token 刷新失败
         return { success: false, error: 'Token刷新失败: ' + tokenResult.error };
       }
     } else {
@@ -245,10 +243,10 @@ async function getAccountCreditsByRefreshToken(refreshToken, email = null, passw
       data: {
         email: fullInfo.user?.email || '',
         name: fullInfo.user?.name || fullInfo.user?.displayName || '',
-        usedPromptCredits: fullInfo.usage.displayPromptUsed || 0,
-        monthlyPromptCredits: fullInfo.usage.displayPromptLimit || 500,
-        usedFlowCredits: fullInfo.usage.displayFlowUsed || 0,
-        monthlyFlowCredits: fullInfo.usage.displayFlowLimit || 500,
+        usedPromptCredits: fullInfo.usage.displayPromptUsed ?? 0,
+        monthlyPromptCredits: fullInfo.usage.displayPromptLimit ?? 0,
+        usedFlowCredits: fullInfo.usage.displayFlowUsed ?? 0,
+        monthlyFlowCredits: fullInfo.usage.displayFlowLimit ?? 0,
         isPro: fullInfo.isPro || false,
         accountType: fullInfo.isPro ? 'PRO' : 'Free',
         planType: fullInfo.usage.planType || 'Free',

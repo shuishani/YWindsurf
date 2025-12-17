@@ -145,7 +145,7 @@ async function refreshIdToken(refreshToken) {
   } catch (error) {
     return {
       success: false,
-      error: error.message
+      error: error.response?.data ? JSON.stringify(error.response.data) : error.message
     };
   }
 }

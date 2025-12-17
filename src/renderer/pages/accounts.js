@@ -45,132 +45,153 @@ const cardSelectors = {
   }
 };
 
-// 通用：切换虚拟卡选择器
-async function toggleCardSelectorGeneric(selectorKey) {
-  const config = cardSelectors[selectorKey];
-  const dropdown = document.getElementById(config.dropdownId);
-  if (!dropdown) return;
+// 当前打开的选择器key
+let currentSelectorKey = null;
+
+// 通用：显示虚拟卡选择弹窗
+async function showCardSelectorModal(selectorKey) {
+  currentSelectorKey = selectorKey;
   
-  if (dropdown.style.display === 'none' || !dropdown.style.display) {
-    try {
-      const result = await ipcRenderer.invoke('get-cards');
-      availableCards = result.success ? result.cards || [] : [];
-      renderCardOptionsGeneric(selectorKey);
-      dropdown.style.display = 'block';
-      
-      setTimeout(() => {
-        document.addEventListener('click', function closeDropdown(e) {
-          if (!e.target.closest('.card-selector-wrapper')) {
-            dropdown.style.display = 'none';
-            document.removeEventListener('click', closeDropdown);
-          }
-        });
-      }, 0);
-    } catch (error) {
-      showToast('加载虚拟卡失败', 'error');
-    }
-  } else {
-    dropdown.style.display = 'none';
+  // 移除已存在的弹窗
+  const existingModal = document.getElementById('cardSelectorModal');
+  if (existingModal) existingModal.remove();
+  
+  try {
+    const result = await ipcRenderer.invoke('get-cards');
+    availableCards = result.success ? result.cards || [] : [];
+    
+    // 创建弹窗
+    const modal = document.createElement('div');
+    modal.id = 'cardSelectorModal';
+    modal.className = 'modal-overlay';
+    modal.style.cssText = 'display:flex; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.3); z-index:10000; justify-content:center; align-items:center;';
+    
+    modal.innerHTML = `
+      <div style="background:white; border-radius:12px; width:380px; max-height:70vh; overflow:hidden; box-shadow:0 10px 40px rgba(0,0,0,0.2);">
+        <div style="display:flex; justify-content:space-between; align-items:center; padding:16px 20px; border-bottom:1px solid #e5e5ea;">
+          <h3 style="margin:0; font-size:16px; font-weight:600; color:#1d1d1f;">选择虚拟卡</h3>
+          <button id="cardSelectorModalClose" style="background:none; border:none; font-size:24px; cursor:pointer; color:#86868b;">&times;</button>
+        </div>
+        <div id="cardSelectorModalContent" style="max-height:calc(70vh - 60px); overflow-y:auto; padding:8px 0;"></div>
+      </div>
+    `;
+    
+    document.body.appendChild(modal);
+    
+    // 绑定关闭按钮事件
+    document.getElementById('cardSelectorModalClose').addEventListener('click', closeCardSelectorModal);
+    
+    // 点击遮罩关闭
+    modal.addEventListener('click', (e) => {
+      if (e.target === modal) closeCardSelectorModal();
+    });
+    
+    // 渲染卡片选项
+    renderCardOptionsInModal();
+  } catch (error) {
+    showToast('加载虚拟卡失败', 'error');
   }
 }
 
-// 通用：渲染卡片选项
-function renderCardOptionsGeneric(selectorKey) {
-  const config = cardSelectors[selectorKey];
-  const container = document.getElementById(config.dropdownId);
-  if (!container) return;
+// 关闭虚拟卡选择弹窗
+function closeCardSelectorModal() {
+  const modal = document.getElementById('cardSelectorModal');
+  if (modal) modal.remove();
+  currentSelectorKey = null;
+}
+
+// 在弹窗中渲染卡片选项
+function renderCardOptionsInModal() {
+  const container = document.getElementById('cardSelectorModalContent');
+  if (!container || !currentSelectorKey) return;
   
+  const config = cardSelectors[currentSelectorKey];
   container.innerHTML = '';
   
   // 自动选择选项
-  const autoOption = document.createElement('div');
-  autoOption.className = `card-option ${config.selectedId === 'auto' ? 'selected' : ''}`;
-  autoOption.innerHTML = `
-    <div class="card-icon">${getIcon('refresh', 16)}</div>
-    <div class="card-info">
-      <div class="card-number">自动选择</div>
-      <div class="card-details">系统自动选择最适合的虚拟卡</div>
-    </div>
-    <div class="card-check">✓</div>
-  `;
-  autoOption.addEventListener('click', () => selectCardGeneric(selectorKey, 'auto'));
+  const autoOption = createModalCardOption('auto', '自动选择', '系统自动选择最适合的虚拟卡', getIcon('refresh', 16), config.selectedId === 'auto');
   container.appendChild(autoOption);
   
   if (availableCards.length === 0) {
-    const emptyOption = document.createElement('div');
-    emptyOption.style.cssText = 'text-align:center; padding:20px; color:#86868b; font-size:12px;';
-    emptyOption.textContent = '暂无其他虚拟卡';
-    container.appendChild(emptyOption);
+    const emptyDiv = document.createElement('div');
+    emptyDiv.style.cssText = 'text-align:center; padding:20px; color:#86868b; font-size:12px;';
+    emptyDiv.textContent = '暂无其他虚拟卡';
+    container.appendChild(emptyDiv);
     return;
   }
   
   const binCards = availableCards.filter(c => c.type === 'bin');
   const fullCards = availableCards.filter(c => c.type === 'full');
   
-  // BIN卡和完整卡分别计算序号
   let binIndex = 1;
   let fullIndex = 1;
   
-  binCards.forEach(card => container.appendChild(createCardOptionGeneric(selectorKey, card, 'bin', binIndex++)));
-  fullCards.forEach(card => container.appendChild(createCardOptionGeneric(selectorKey, card, 'full', fullIndex++)));
+  binCards.forEach(card => {
+    const mainInfo = `${binIndex}. ${card.bin ? card.bin.substring(0, 6) + 'xxxxxx' : '未知BIN'}`;
+    const subInfo = `随机生成卡号 · ${card.bindCount > 0 ? `已绑${card.bindCount}次` : '未使用'}`;
+    container.appendChild(createModalCardOption(card.id, mainInfo, subInfo, getIcon('cardBin', 16), config.selectedId === card.id));
+    binIndex++;
+  });
+  
+  fullCards.forEach(card => {
+    const formattedNum = (card.number || '').replace(/(.{4})/g, '$1 ').trim();
+    const mainInfo = `${fullIndex}. ${formattedNum}`;
+    const subInfo = `EXP: ${card.expMonth || 'MM'}/${card.expYear || 'YY'} · CVV: ${card.cvv || '***'} · ${card.bindCount > 0 ? `${card.bindCount}次` : '未使用'}`;
+    container.appendChild(createModalCardOption(card.id, mainInfo, subInfo, getIcon('creditCard', 16), config.selectedId === card.id));
+    fullIndex++;
+  });
 }
 
-// 通用：创建卡片选项元素
-function createCardOptionGeneric(selectorKey, card, type, index = 0) {
-  const config = cardSelectors[selectorKey];
+// 创建弹窗中的卡片选项
+function createModalCardOption(cardId, mainText, subText, icon, isSelected) {
   const option = document.createElement('div');
-  option.className = `card-option ${config.selectedId === card.id ? 'selected' : ''}`;
-  
-  const indexStr = index > 0 ? `${index}. ` : '';
-  const icon = type === 'bin' ? getIcon('cardBin', 14) : getIcon('creditCard', 14);
-  
-  let mainInfo, subInfo;
-  if (type === 'bin') {
-    mainInfo = `${indexStr}${card.bin ? card.bin.substring(0, 6) + 'xxxxxx' : '未知BIN'}`;
-    subInfo = `<span>随机生成卡号</span><span>${card.bindCount > 0 ? `已绑${card.bindCount}次` : '未使用'}</span>`;
-  } else {
-    const formattedNum = (card.number || '').replace(/(.{4})/g, '$1 ').trim();
-    mainInfo = `${indexStr}${formattedNum}`;
-    subInfo = `<span>EXP: ${card.expMonth || 'MM'}/${card.expYear || 'YY'}</span>
-      <span>CVV: ${card.cvv || 'CVV'}</span>
-      <span style="margin-left:auto; color:#666;">${card.bindCount > 0 ? `${card.bindCount}次` : '未使用'}</span>`;
-  }
+  option.style.cssText = `display:flex; align-items:center; padding:12px 20px; cursor:pointer; gap:12px; transition:background 0.2s; ${isSelected ? 'background:#f0f7ff;' : ''}`;
+  option.onmouseenter = () => { if (!isSelected) option.style.background = '#f5f5f7'; };
+  option.onmouseleave = () => { if (!isSelected) option.style.background = 'transparent'; };
   
   option.innerHTML = `
-    <div class="card-icon">${icon}</div>
-    <div class="card-info">
-      <div class="card-number">${mainInfo}</div>
-      <div class="card-details">${subInfo}</div>
+    <div style="width:32px; height:32px; background:#f5f5f7; border-radius:8px; display:flex; align-items:center; justify-content:center; color:#007aff;">${icon}</div>
+    <div style="flex:1; min-width:0;">
+      <div style="font-size:13px; font-weight:500; color:#1d1d1f;">${mainText}</div>
+      <div style="font-size:11px; color:#86868b; margin-top:2px;">${subText}</div>
     </div>
-    <div class="card-check">✓</div>
+    ${isSelected ? '<div style="color:#007aff; font-size:16px;">✓</div>' : ''}
   `;
   
-  option.addEventListener('click', () => selectCardGeneric(selectorKey, card.id));
+  option.addEventListener('click', () => selectCardFromModal(cardId));
   return option;
 }
 
-// 通用：选择卡片
-function selectCardGeneric(selectorKey, cardId) {
-  const config = cardSelectors[selectorKey];
+// 从弹窗选择卡片
+function selectCardFromModal(cardId) {
+  if (!currentSelectorKey) return;
+  
+  const config = cardSelectors[currentSelectorKey];
   config.selectedId = cardId;
   
   // 更新全局变量（兼容旧代码）
-  if (selectorKey === 'main') selectedCardId = cardId;
+  if (currentSelectorKey === 'main') selectedCardId = cardId;
   
-  updateCardButtonGeneric(selectorKey);
+  // 更新待确认列表中的选择
+  if (currentSelectorKey.startsWith('pending_')) {
+    const email = currentSelectorKey.replace('pending_', '').replace(/_/g, '.');
+    // 找到对应账号并更新
+    const acc = pendingBindingAccounts.find(a => a.email.replace(/[^a-zA-Z0-9]/g, '_') === currentSelectorKey.replace('pending_', ''));
+    if (acc) acc.selectedCardId = cardId;
+  }
   
-  const dropdown = document.getElementById(config.dropdownId);
-  if (dropdown) dropdown.style.display = 'none';
+  updateCardButtonGeneric(currentSelectorKey);
+  closeCardSelectorModal();
 }
 
-// 通用：更新按钮显示
+// 更新按钮显示
 function updateCardButtonGeneric(selectorKey) {
   const config = cardSelectors[selectorKey];
   const button = document.getElementById(config.buttonId);
   if (!button) return;
   
   if (config.selectedId === 'auto') {
-    button.textContent = '选择虚拟卡 ▾';
+    button.textContent = '选择虚拟卡';
   } else {
     const card = availableCards.find(c => c.id === config.selectedId);
     if (card) {
@@ -178,16 +199,15 @@ function updateCardButtonGeneric(selectorKey) {
       const num = card.type === 'bin' 
         ? (card.bin ? card.bin.substring(0, 6) + 'xx' : '未知')
         : (card.number ? card.number.substring(0, 4) + ' ' + card.number.substring(4, 8) + '...' : '未知');
-      button.textContent = `${icon} ${num} ▾`;
+      button.textContent = `${icon} ${num}`;
     }
   }
 }
 
-// 兼容旧接口
-function toggleCardSelector() { toggleCardSelectorGeneric('main'); }
-function toggleRetryCardSelector() { toggleCardSelectorGeneric('retry'); }
-function selectCard(cardId) { selectCardGeneric('main', cardId); }
-function selectRetryCard(cardId) { selectCardGeneric('retry', cardId); }
+// 统一接口
+function toggleCardSelector() { showCardSelectorModal('main'); }
+function toggleRetryCardSelector() { showCardSelectorModal('retry'); }
+function toggleCardSelectorGeneric(selectorKey) { showCardSelectorModal(selectorKey); }
 function getSelectedCardId() { return cardSelectors.main.selectedId; }
 function getRetrySelectedCardId() { return cardSelectors.retry.selectedId; }
 
@@ -298,6 +318,7 @@ function generateAccountRowHTML(acc, styles, isCurrentAccount = false, index = 0
 
 // ==================== 账号列表渲染 ====================
 let currentSearchKeyword = ''; // 当前搜索关键词
+let currentFilterType = 'all'; // 当前筛选类型
 
 // 根据邮箱过滤账号
 function filterAccountsByEmail(keyword) {
@@ -332,14 +353,44 @@ async function renderAccounts() {
   // 根据搜索关键词过滤账号
   let filteredAccounts = accountsCache;
   if (currentSearchKeyword) {
-    filteredAccounts = accountsCache.filter(acc => 
+    filteredAccounts = filteredAccounts.filter(acc => 
       acc.email && acc.email.toLowerCase().includes(currentSearchKeyword)
     );
+  }
+  
+  // 根据类型筛选
+  if (currentFilterType && currentFilterType !== 'all') {
+    filteredAccounts = filteredAccounts.filter(acc => {
+      if (currentFilterType === 'unbound') {
+        return !acc.cardBound;
+      } else if (currentFilterType === 'cleanup') {
+        // 可清理：已过期或积分耗尽
+        if (acc.createdAt) {
+          const expiry = calculateExpiry(acc.createdAt);
+          if (expiry.isExpired) return true;
+        }
+        const used = acc.usedPromptCredits || 0;
+        const total = acc.monthlyPromptCredits || 500;
+        if (total <= 100 && used >= total * 0.95) return true;
+        return false;
+      } else {
+        // 按账号类型筛选
+        return (acc.planType || 'Free') === currentFilterType;
+      }
+    });
   }
 
   // 如果过滤后没有结果
   if (filteredAccounts.length === 0) {
-    tbody.innerHTML = generateEmptyStateHTML(9, '未找到匹配的账号', `没有包含 "${currentSearchKeyword}" 的邮箱`);
+    let emptyMsg = '未找到匹配的账号';
+    let emptyDesc = '';
+    if (currentSearchKeyword) {
+      emptyDesc = `没有包含 "${currentSearchKeyword}" 的邮箱`;
+    } else if (currentFilterType && currentFilterType !== 'all') {
+      const filterLabels = { 'unbound': '未绑卡', 'cleanup': '可清理' };
+      emptyDesc = `没有 ${filterLabels[currentFilterType] || currentFilterType} 类型的账号`;
+    }
+    tbody.innerHTML = generateEmptyStateHTML(9, emptyMsg, emptyDesc);
     return;
   }
 
@@ -488,7 +539,7 @@ function toggleActionMenu(event, id) {
   const menuHTML = `
     <div id="accountActionMenu" class="action-menu show" style="position:fixed; left:${left}px; top:${top}px;">
       <div class="action-menu-item" onclick="pinAccount('${acc.id}'); document.getElementById('accountActionMenu')?.remove();">${getMenuIcon('arrowUp')}置顶账号</div>
-      <div class="action-menu-item" onclick="switchAccount('${acc.email}', '${acc.password}'); document.getElementById('accountActionMenu')?.remove();">${getMenuIcon('repeat')}切换账号</div>
+      <div class="action-menu-item" onclick="switchAccount('${acc.email}', '${acc.password || ''}', '${acc.refreshToken || ''}', '${acc.apiKey || ''}', '${acc.name || ''}'); document.getElementById('accountActionMenu')?.remove();">${getMenuIcon('repeat')}切换账号</div>
       <div class="action-menu-item" onclick="viewAccount('${acc.email}', '${acc.password}'); document.getElementById('accountActionMenu')?.remove();">${getMenuIcon('eye')}查看详情</div>
       <div class="action-menu-item" onclick="getPaymentLinkForAccount('${acc.email}'); document.getElementById('accountActionMenu')?.remove();">${getMenuIcon('link')}获取绑卡链接</div>
       <div class="action-menu-item" onclick="editAccount('${acc.id}', '${acc.email}', '${acc.password}'); document.getElementById('accountActionMenu')?.remove();">${getMenuIcon('edit')}编辑账号</div>
@@ -549,7 +600,7 @@ function viewAccount(email, password) {
   createModal('account-detail-modal', `
     <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; border-bottom: 1px solid #e5e5ea; padding-bottom: 10px;">
       <h2 style="margin: 0; color: #1d1d1f; font-size: 16px; font-weight: 600;">账号详细信息</h2>
-      <button onclick="this.closest('.account-detail-modal').remove()" style="background: none; border: none; font-size: 18px; cursor: pointer; color: #86868b;">&times;</button>
+      <button onclick="this.closest('.account-detail-modal').remove()" style="background: none; border: none; font-size: 24px; cursor: pointer; color: #86868b;">&times;</button>
     </div>
     <div style="font-size: 13px;">
       <!-- 邮箱 -->
@@ -1237,19 +1288,34 @@ async function selectUnboundAccounts() {
   showToast(`已选择 ${count} 个未绑卡账号`, 'success');
 }
 
-// 切换选择菜单
-function toggleSelectMenu(event) {
+// 根据账号类型筛选
+function filterAccountsByType(type) {
+  currentFilterType = type;
+  // 更新筛选按钮显示
+  const filterLabel = document.getElementById('filterLabel');
+  if (filterLabel) {
+    const labels = {
+      'all': '筛选',
+      'unbound': '未绑卡',
+      'cleanup': '可清理'
+    };
+    filterLabel.textContent = labels[type] || type;
+  }
+  renderAccounts();
+}
+
+// 切换筛选菜单
+function toggleFilterMenu(event) {
   event.stopPropagation();
-  const menu = document.getElementById('selectMenu');
+  const menu = document.getElementById('filterMenu');
   if (menu) {
     menu.style.display = menu.style.display === 'none' ? 'block' : 'none';
   }
   
-  // 点击外部关闭菜单
   if (menu && menu.style.display === 'block') {
     setTimeout(() => {
       document.addEventListener('click', function closeMenu(e) {
-        if (!e.target.closest('#selectMenu')) {
+        if (!e.target.closest('#filterMenu')) {
           menu.style.display = 'none';
           document.removeEventListener('click', closeMenu);
         }
@@ -1258,51 +1324,11 @@ function toggleSelectMenu(event) {
   }
 }
 
-function hideSelectMenu() {
-  const menu = document.getElementById('selectMenu');
+function hideFilterMenu() {
+  const menu = document.getElementById('filterMenu');
   if (menu) {
     menu.style.display = 'none';
   }
-}
-
-// 选择可清理的账号（已过期 或 积分完全耗尽）
-function selectAccountsForCleanup() {
-  let count = 0;
-  
-  accountsCache.forEach(account => {
-    // 通过 data-email 属性查找复选框
-    const checkbox = document.querySelector(`#accountsList .account-checkbox[data-email="${account.email}"]`);
-    if (!checkbox) return;
-    
-    let canCleanup = false;
-    
-    // 检查是否已过期
-    if (account.createdAt) {
-      const expiry = calculateExpiry(account.createdAt);
-      if (expiry.isExpired) {
-        canCleanup = true;
-      }
-    }
-    
-    // 检查积分使用情况（只针对非PRO账号）
-    const used = account.usedPromptCredits || 0;
-    const total = account.monthlyPromptCredits || 500;
-    // 100积分/25积分账号：使用超过95%可清理
-    // PRO账号(500+)不删除
-    if (total <= 100 && used >= total * 0.95) {
-      canCleanup = true;
-    }
-    
-    if (canCleanup) {
-      checkbox.checked = true;
-      count++;
-    } else {
-      checkbox.checked = false;
-    }
-  });
-  
-  updateSelectedBindCount();
-  showToast(`已选择 ${count} 个可清理的账号`, 'warning');
 }
 
 // 统一选择操作
@@ -1334,31 +1360,6 @@ function toggleSelection(mode) {
     invert: `反选完成，当前选中 ${count} 个账号`
   };
   showToast(messages[mode], mode === 'none' ? 'success' : 'success');
-}
-
-// 兼容旧函数名
-function selectAllAccountsCheckbox() { toggleSelection('all'); }
-function invertSelection() { toggleSelection('invert'); }
-function deselectAllAccounts() { toggleSelection('none'); }
-
-// 切换更多操作菜单
-function toggleMoreActionsMenu() {
-  const menu = document.getElementById('moreActionsMenu');
-  if (menu) {
-    menu.style.display = menu.style.display === 'none' ? 'block' : 'none';
-  }
-  
-  // 点击外部关闭菜单
-  if (menu && menu.style.display === 'block') {
-    setTimeout(() => {
-      document.addEventListener('click', function closeMenu(e) {
-        if (!e.target.closest('#moreActionsMenu') && !e.target.closest('button[onclick*="toggleMoreActionsMenu"]')) {
-          menu.style.display = 'none';
-          document.removeEventListener('click', closeMenu);
-        }
-      });
-    }, 0);
-  }
 }
 
 // 刷新选中账号的积分数据
@@ -1399,59 +1400,6 @@ async function refreshSelectedAccounts() {
   logger.info(`批量刷新完成：成功 ${successCount} 个，失败 ${failCount} 个`);
 }
 
-// 切换导出菜单
-function toggleExportMenu(event) {
-  event.stopPropagation();
-  const menu = document.getElementById('exportMenu');
-  if (menu) {
-    menu.style.display = menu.style.display === 'none' ? 'block' : 'none';
-  }
-  
-  // 点击外部关闭菜单
-  if (menu && menu.style.display === 'block') {
-    setTimeout(() => {
-      document.addEventListener('click', function closeMenu(e) {
-        if (!e.target.closest('#exportMenu')) {
-          menu.style.display = 'none';
-          document.removeEventListener('click', closeMenu);
-        }
-      });
-    }, 0);
-  }
-}
-
-function hideExportMenu() {
-  const menu = document.getElementById('exportMenu');
-  if (menu) {
-    menu.style.display = 'none';
-  }
-}
-
-// 获取账号的显示类型（直接使用 planType 字段，与后端数据保持一致）
-function getAccountDisplayType(acc) {
-  return acc.planType || 'Free';
-}
-
-// 按类型导出账号
-async function exportAccountsByType(type) {
-  let accountsToExport = [];
-  
-  if (type === 'all') {
-    accountsToExport = [...accountsCache];
-  } else {
-    // 按账号类型过滤 - 使用与显示一致的逻辑
-    accountsToExport = accountsCache.filter(acc => getAccountDisplayType(acc) === type);
-  }
-  
-  if (accountsToExport.length === 0) {
-    showToast(`没有 ${type === 'all' ? '' : type + ' 类型的'}账号可导出`, 'warning');
-    return;
-  }
-  
-  // 显示格式选择弹窗
-  showExportFormatDialog(accountsToExport);
-}
-
 // 导出选中的账号
 async function exportSelectedAccounts() {
   const selectedAccounts = getSelectedAccounts();
@@ -1461,7 +1409,6 @@ async function exportSelectedAccounts() {
     return;
   }
   
-  // 显示格式选择弹窗
   showExportFormatDialog(selectedAccounts);
 }
 
@@ -1711,15 +1658,12 @@ function renderPendingAccounts() {
   
   list.innerHTML = pendingBindingAccounts.map((acc) => {
     const key = `pending_${acc.email.replace(/[^a-zA-Z0-9]/g, '_')}`;
-    const selectedText = acc.selectedCardId && acc.selectedCardId !== 'auto' ? acc.selectedCardId.substring(0, 8) + '****' : '选择虚拟卡';
+    const selectedText = acc.selectedCardId && acc.selectedCardId !== 'auto' ? acc.selectedCardId.substring(0, 8) + '...' : '选择虚拟卡';
     return `
     <div style="display:flex; align-items:center; justify-content:space-between; padding:10px 12px; border-bottom:1px solid #e5e5ea; gap:8px;" data-email="${acc.email}">
       <span style="font-size:12px; color:#1d1d1f; flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;" title="${acc.email}">${acc.email}</span>
       <div style="display:flex; gap:6px; align-items:center; flex-shrink:0;">
-        <div class="card-selector-wrapper" style="position:relative;">
-          <button id="pendingBtn_${key}" class="compact-btn btn-secondary" onclick="toggleCardSelectorGeneric('${key}')" style="font-size:11px; padding:4px 8px;">${selectedText} ▾</button>
-          <div id="pendingDrop_${key}" class="card-selector-dropdown" style="display:none; position:absolute; top:100%; right:0; min-width:280px;"></div>
-        </div>
+        <button id="pendingBtn_${key}" onclick="toggleCardSelectorGeneric('${key}')" style="background:#f5f5f7; color:#1d1d1f; border:1px solid #d2d2d7; padding:4px 10px; border-radius:4px; cursor:pointer; font-size:11px; font-weight:600;">${selectedText}</button>
         <button onclick="confirmBindSuccessForAccount('${acc.email}')" style="background:#34c759; color:white; border:none; padding:4px 10px; border-radius:4px; cursor:pointer; font-size:11px; font-weight:600;">成功</button>
         <button onclick="retryBindingForAccount('${acc.email}', '${acc.password}')" style="background:#007aff; color:white; border:none; padding:4px 10px; border-radius:4px; cursor:pointer; font-size:11px; font-weight:600;">重试</button>
       </div>
@@ -1815,6 +1759,10 @@ async function startApiBatchBinding() {
 // 执行 API 批量绑卡
 async function executeApiBatchBinding(accounts, selectedCardId) {
   showBindingLog();
+  
+  // 清空待确认列表，重新开始
+  pendingBindingAccounts = [];
+  renderPendingAccounts();
   
   try {
     const result = await ipcRenderer.invoke('batch-api-bind-cards', { 
@@ -1940,6 +1888,17 @@ ipcRenderer.on('binding-progress', (event, progress) => {
   }
 });
 
+// 监听绑卡自动确认事件（后台检测成功后触发）
+ipcRenderer.on('binding-confirmed', (event, data) => {
+  const { email, success } = data;
+  if (success) {
+    // 从待确认列表中移除
+    pendingBindingAccounts = pendingBindingAccounts.filter(acc => acc.email !== email);
+    renderPendingAccounts();
+    showToast(`${email} 绑卡成功`, 'success');
+  }
+});
+
 // 监听刷新数据事件
 ipcRenderer.on('refresh-data', async () => {
   // 刷新账号列表
@@ -2016,12 +1975,18 @@ function updateSwitchProgress(current, total, status) {
 }
 
 // 自动切号功能
-async function switchAccount(email, password) {
+async function switchAccount(email, password, refreshToken = null, apiKey = null, name = null) {
   // 显示切号日志窗口
   showSwitchLog();
   
   try {
-    const result = await ipcRenderer.invoke('switch-account', { email, password });
+    const result = await ipcRenderer.invoke('switch-account', { 
+      email, 
+      password, 
+      refreshToken,
+      apiKey,
+      name
+    });
     
     if (result.success) {
       if (result.windsurfStarted) {
@@ -2278,18 +2243,11 @@ const accountsModule = {
   hideSwitchLog,
   addSwitchLog,
   updateSwitchProgress,
-  toggleSelectMenu,
-  hideSelectMenu,
-  selectAccountsForCleanup,
-  selectAllAccountsCheckbox,
-  invertSelection,
-  deselectAllAccounts,
-  toggleMoreActionsMenu,
+  filterAccountsByType,
+  toggleFilterMenu,
+  hideFilterMenu,
   refreshSelectedAccounts,
   exportSelectedAccounts,
-  toggleExportMenu,
-  hideExportMenu,
-  exportAccountsByType,
   doExportAccounts,
   deleteSelectedAccounts,
   toggleCardSelector,
@@ -2319,8 +2277,7 @@ const accountsModule = {
   apiBindSingleAccount,
   getPaymentLinkOnly,
   getPaymentLinkForAccount,
-  showBindingLog,
-  getSelectedCardId
+  showBindingLog
 };
 
 Object.assign(window, accountsModule);
