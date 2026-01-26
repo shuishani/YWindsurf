@@ -230,7 +230,7 @@ class RegistrationBot {
       const settingsPath = path.join(windsurfPaths.getJsonDataDir(), 'settings.json');
       let settings = {};
       try { settings = JSON.parse(fs.readFileSync(settingsPath, 'utf-8')); } catch {}
-      const browserArgs = ['--disable-blink-features=AutomationControlled', '--window-size=800,1000'];
+      const browserArgs = ['--disable-blink-features=AutomationControlled'];
       if (settings.incognitoMode !== false) browserArgs.push('--incognito');
       const response = await connect({
         headless: false,
@@ -243,8 +243,8 @@ class RegistrationBot {
       browser = response.browser;
       page = response.page;
       
-      // 设置浏览器窗口大小为 800x1000（与绑卡一致）
-      await page.setViewport({ width: 800, height: 1000 });
+      // 设置浏览器窗口大小为 800x900（与单独绑卡一致）
+      await page.setViewport({ width: 800, height: 900 });
       
       this.logger.userInfo(firstName, lastName, email, password);
 
@@ -565,6 +565,12 @@ class RegistrationBot {
         }
       }
       
+      // 不绑卡或绑卡失败时，关闭浏览器
+      if (browser) {
+        this.logger.info('关闭浏览器');
+        try { await browser.close(); } catch (e) {}
+      }
+      
       return {
         success: true,
         email,
@@ -657,9 +663,9 @@ class RegistrationBot {
                     result.cardBound = true;
                   } else if (bindResult.pending) {
                     taskLogCallback('等待支付处理...');
-                    // 等待成功页面（最多60秒）- 与单独绑卡逻辑一致
+                    // 等待成功页面（最多120秒）
                     let bindSuccess = false;
-                    for (let w = 0; w < 60; w++) {
+                    for (let w = 0; w < 120; w++) {
                       await new Promise(resolve => setTimeout(resolve, 1000));
                       try {
                         // 检测URL（与单独绑卡一致）
