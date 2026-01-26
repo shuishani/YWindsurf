@@ -662,20 +662,22 @@ class RegistrationBot {
                     taskLogCallback('绑卡成功');
                     result.cardBound = true;
                   } else if (bindResult.pending) {
-                    taskLogCallback('等待支付处理...');
-                    // 等待成功页面（最多180秒）
+                    taskLogCallback('等待支付处理（无超时，等待页面关闭或成功）...');
+                    // 无限等待，直到检测到成功或页面关闭
                     let bindSuccess = false;
-                    for (let w = 0; w < 180; w++) {
+                    let waitSeconds = 0;
+                    while (true) {
                       await new Promise(resolve => setTimeout(resolve, 1000));
+                      waitSeconds++;
                       try {
-                        // 检测URL（与单独绑卡一致）
+                        // 检测URL
                         const currentUrl = result.page.url();
                         if (currentUrl.includes('payment-success') || currentUrl.includes('billing/payment-success')) {
                           bindSuccess = true;
                           taskLogCallback('检测到成功页面');
                           break;
                         }
-                        // 备用：检测页面内容
+                        // 检测页面内容
                         const pageContent = await result.page.evaluate(() => document.body.innerText);
                         if (pageContent.includes('Thanks') || pageContent.includes('Success') || 
                             pageContent.includes('感谢') || pageContent.includes('成功')) {
@@ -683,24 +685,21 @@ class RegistrationBot {
                           taskLogCallback('检测到成功页面');
                           break;
                         }
-                      } catch (e) {
-                        break; // 页面已关闭
-                      }
-                    }
-                    // 如果超时，尝试访问 pricing 页面检测是否已经是 PRO TRIAL
-                    if (!bindSuccess) {
-                      try {
-                        taskLogCallback('超时，检查订阅状态...');
-                        await result.page.goto('https://windsurf.com/pricing', { waitUntil: 'networkidle2', timeout: 15000 });
-                        await new Promise(resolve => setTimeout(resolve, 2000));
-                        const pageContent = await result.page.evaluate(() => document.body.innerText);
-                        // 检测是否显示 PRO TRIAL 或 Upgrade now（说明已经是试用状态）
-                        if (pageContent.includes('PRO') && (pageContent.includes('TRIAL') || pageContent.includes('Upgrade now'))) {
+                        // 检测 PRO TRIAL 状态（在 pricing 页面）
+                        if (currentUrl.includes('pricing') && pageContent.includes('PRO') && 
+                            (pageContent.includes('TRIAL') || pageContent.includes('Upgrade now'))) {
                           bindSuccess = true;
                           taskLogCallback('检测到 PRO TRIAL 状态，绑卡成功');
+                          break;
+                        }
+                        // 每30秒输出一次等待日志
+                        if (waitSeconds % 30 === 0) {
+                          taskLogCallback(`等待中... (${waitSeconds}秒)`);
                         }
                       } catch (e) {
-                        // 忽略检测错误
+                        // 页面已关闭，尝试最后检测
+                        taskLogCallback('浏览器已关闭，检查订阅状态...');
+                        break;
                       }
                     }
                     
@@ -708,7 +707,7 @@ class RegistrationBot {
                     if (bindSuccess) {
                       taskLogCallback('绑卡成功');
                     } else {
-                      taskLogCallback('绑卡超时或失败');
+                      taskLogCallback('绑卡失败（浏览器已关闭）');
                     }
                   } else {
                     taskLogCallback(`绑卡失败: ${bindResult.error || '未知错误'}`);
