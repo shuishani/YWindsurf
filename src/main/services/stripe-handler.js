@@ -294,6 +294,7 @@ function initStripeHandlers(win) {
   mainWindow = win;
   
   // 获取支付链接（仅获取链接，不打开浏览器）
+  // 如果需要验证码，返回 needsCaptcha 标志
   ipcMain.handle('get-payment-link', async (event, { email, password }) => {
     const { getPaymentLink } = require('./stripe-api');
     return await getPaymentLink(email, password);
@@ -317,43 +318,26 @@ function initStripeHandlers(win) {
         bindLogger.warning('未选择虚拟卡，将打开页面手动填写');
       }
       
-      // 执行 API 绑卡
-      const { getPaymentLink } = require('./stripe-api');
-      const { connect } = require('puppeteer-real-browser');
+      // 直接使用浏览器登录并进入绑卡页面
       const { bindCard } = require('./stripe-binder');
+      const { getPaymentLinkWithBrowser } = require('./turnstile-handler');
       
-      // 1. 获取支付链接
-      const linkResult = await getPaymentLink(email, password);
-      if (!linkResult.success) {
-        return { success: false, error: linkResult.error };
+      bindLogger.info('使用浏览器登录...');
+      const browserResult = await getPaymentLinkWithBrowser(email, password);
+      
+      if (!browserResult.success) {
+        bindLogger.error('登录失败', browserResult.error);
+        return { success: false, error: browserResult.error };
       }
-      
-      bindLogger.success('获取支付链接成功');
-      
-      // 2. 打开浏览器
-      bindLogger.info('启动浏览器...');
-      const settings = await getSettings();
-      const browserArgs = ['--disable-blink-features=AutomationControlled', '--window-size=800,1000'];
-      if (settings.incognitoMode !== false) browserArgs.push('--incognito');
-      const response = await connect({
-        headless: false,
-        fingerprint: true,
-        turnstile: false,
-        tf: false,
-        args: browserArgs,
-        defaultViewport: null  // 禁用固定viewport，让页面可以滚动
-      });
-      
-      const browser = response.browser;
-      const page = response.page;
-      
-      // 不设置setViewport，让页面可以正常滚动
-      await page.goto(linkResult.paymentLink, { waitUntil: 'networkidle2', timeout: 30000 });
-      await new Promise(resolve => setTimeout(resolve, 3000));
       
       bindLogger.success('已到达 Stripe 页面');
       
-      // 4. 自动填写表单
+      const browser = browserResult.browser;
+      const page = browserResult.page;
+      
+      await new Promise(resolve => setTimeout(resolve, 2000));
+      
+      // 自动填写表单
       if (cardInfo) {
         bindLogger.info('开始自动填写表单...');
         const bindResult = await bindCard(page, null, cardInfo);
@@ -446,39 +430,24 @@ function initStripeHandlers(win) {
         
         const cardInfo = generateCardInfo(cardData);
         
-        // 获取支付链接
-        taskLogger.progress('正在获取支付链接...');
-        const { getPaymentLink } = require('./stripe-api');
-        const linkResult = await getPaymentLink(acc.email, acc.password);
+        // 直接使用浏览器登录并进入绑卡页面（跳过API获取链接）
+        console.log('[DEBUG] 开始浏览器登录流程');
+        taskLogger.progress('使用浏览器登录...');
+        const { getPaymentLinkWithBrowser } = require('./turnstile-handler');
+        const browserResult = await getPaymentLinkWithBrowser(acc.email, acc.password);
         
-        if (!linkResult.success) {
-          taskLogger.error('获取链接失败', linkResult.error);
+        if (!browserResult.success) {
+          taskLogger.error('登录失败', browserResult.error);
           await updateAccountBindStatus(acc.email, false);
-          return { success: false, error: linkResult.error };
+          return { success: false, error: browserResult.error };
         }
         
-        taskLogger.success('成功获取支付链接');
+        taskLogger.success('已到达 Stripe 页面');
         
-        // 打开浏览器
-        const { connect } = require('puppeteer-real-browser');
-        const settings = await getSettings();
-        const browserArgs = ['--disable-blink-features=AutomationControlled', '--window-size=800,1000'];
-        if (settings.incognitoMode !== false) browserArgs.push('--incognito');
-        const response = await connect({
-          headless: false,
-          fingerprint: true,
-          turnstile: false,
-          tf: false,
-          args: browserArgs,
-          defaultViewport: null  // 禁用固定viewport，让页面可以滚动
-        });
+        const browser = browserResult.browser;
+        const page = browserResult.page;
         
-        const browser = response.browser;
-        const page = response.page;
-        
-        // 不设置setViewport，让页面可以正常滚动
-        await page.goto(linkResult.paymentLink, { waitUntil: 'networkidle2', timeout: 30000 });
-        await new Promise(resolve => setTimeout(resolve, 3000));
+        await new Promise(resolve => setTimeout(resolve, 2000));
         
         // 自动填写表单
         const { bindCard } = require('./stripe-binder');
@@ -634,4 +603,4 @@ async function updateAccountBindStatus(email, success) {
     logger.error('更新虚拟卡绑定次数失败', error.message);
   }
 }
-module.exports = { initStripeHandlers };
+module.exports = { initStripeHandlers, selectAvailableCard, selectCardById, generateCardInfo };

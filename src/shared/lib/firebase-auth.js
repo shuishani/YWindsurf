@@ -100,6 +100,25 @@ async function loginWithEmailPassword(email, password) {
 }
 
 /**
+ * 从 Firebase ID Token (JWT) 中解析邮箱
+ * @param {string} idToken - Firebase ID Token
+ * @returns {string|null} 邮箱地址
+ */
+function parseEmailFromIdToken(idToken) {
+  try {
+    // JWT 格式: header.payload.signature
+    const parts = idToken.split('.');
+    if (parts.length !== 3) return null;
+    
+    // Base64 解码 payload
+    const payload = JSON.parse(Buffer.from(parts[1], 'base64').toString('utf-8'));
+    return payload.email || null;
+  } catch (error) {
+    return null;
+  }
+}
+
+/**
  * 使用refresh token刷新ID token
  * @param {string} refreshToken 
  * @returns {Promise<Object>}
@@ -136,11 +155,15 @@ async function refreshIdToken(refreshToken) {
     //   }
     // );
     
+    // 从 ID Token 中解析邮箱
+    const email = parseEmailFromIdToken(response.data.id_token);
+    
     return {
       success: true,
       idToken: response.data.id_token,
       refreshToken: response.data.refresh_token,
-      expiresIn: response.data.expires_in
+      expiresIn: response.data.expires_in,
+      email: email
     };
   } catch (error) {
     return {

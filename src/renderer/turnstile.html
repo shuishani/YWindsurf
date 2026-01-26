@@ -1,0 +1,273 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self' https://challenges.cloudflare.com; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://challenges.cloudflare.com; style-src 'self' 'unsafe-inline'; frame-src https://challenges.cloudflare.com;">
+  <title>人机验证</title>
+  <script src="https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit" async defer></script>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+    
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+      background: #f5f5f5;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      padding: 20px;
+    }
+    
+    .container {
+      background: white;
+      border-radius: 12px;
+      padding: 30px;
+      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.1);
+      max-width: 400px;
+      width: 100%;
+      text-align: center;
+    }
+    
+    h1 {
+      font-size: 20px;
+      color: #333;
+      margin-bottom: 10px;
+    }
+    
+    .subtitle {
+      color: #666;
+      font-size: 14px;
+      margin-bottom: 25px;
+    }
+    
+    .turnstile-container {
+      display: flex;
+      justify-content: center;
+      margin-bottom: 20px;
+      min-height: 65px;
+    }
+    
+    .status {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      margin-bottom: 20px;
+      font-size: 14px;
+      color: #666;
+    }
+    
+    .status.success {
+      color: #22c55e;
+    }
+    
+    .status.error {
+      color: #ef4444;
+    }
+    
+    .status-icon {
+      width: 20px;
+      height: 20px;
+    }
+    
+    .buttons {
+      display: flex;
+      gap: 12px;
+      justify-content: center;
+    }
+    
+    button {
+      padding: 10px 24px;
+      border-radius: 8px;
+      font-size: 14px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+    
+    .btn-cancel {
+      background: #f3f4f6;
+      border: 1px solid #d1d5db;
+      color: #374151;
+    }
+    
+    .btn-cancel:hover {
+      background: #e5e7eb;
+    }
+    
+    .btn-primary {
+      background: #3b82f6;
+      border: none;
+      color: white;
+    }
+    
+    .btn-primary:hover {
+      background: #2563eb;
+    }
+    
+    .btn-primary:disabled {
+      background: #93c5fd;
+      cursor: not-allowed;
+    }
+    
+    .loading {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+    }
+    
+    .spinner {
+      width: 16px;
+      height: 16px;
+      border: 2px solid #e5e7eb;
+      border-top-color: #3b82f6;
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+    }
+    
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>人机验证</h1>
+    <p class="subtitle">请完成验证以获取试用链接</p>
+    
+    <div class="turnstile-container">
+      <div id="turnstile-widget"></div>
+    </div>
+    
+    <div id="status" class="status">
+      <div class="loading">
+        <div class="spinner"></div>
+        <span>正在加载验证...</span>
+      </div>
+    </div>
+    
+    <div class="buttons">
+      <button class="btn-cancel" onclick="cancel()">取消</button>
+      <button id="submitBtn" class="btn-primary" onclick="submit()" disabled>获取链接</button>
+    </div>
+  </div>
+  
+  <script>
+    const { ipcRenderer } = require('electron');
+    
+    let turnstileToken = null;
+    const SITEKEY = '0x4AAAAAAA447Bur1xJStKg5';
+    
+    // 调试日志
+    function log(msg) {
+      console.log('[Turnstile]', msg);
+      // 也发送到主进程
+      try {
+        ipcRenderer.send('turnstile-log', msg);
+      } catch (e) {}
+    }
+    
+    // 初始化 Turnstile
+    window.onload = function() {
+      log('页面加载完成');
+      log('turnstile 对象: ' + (typeof turnstile));
+      
+      if (typeof turnstile !== 'undefined') {
+        renderTurnstile();
+      } else {
+        log('等待 Turnstile 脚本加载...');
+        // 等待 Turnstile 脚本加载
+        const checkInterval = setInterval(() => {
+          log('检查 turnstile: ' + (typeof turnstile));
+          if (typeof turnstile !== 'undefined') {
+            clearInterval(checkInterval);
+            renderTurnstile();
+          }
+        }, 500);
+        
+        // 超时处理
+        setTimeout(() => {
+          clearInterval(checkInterval);
+          if (typeof turnstile === 'undefined') {
+            log('加载超时');
+            showError('验证码加载失败，请检查网络');
+          }
+        }, 15000);
+      }
+    };
+    
+    function renderTurnstile() {
+      log('开始渲染 Turnstile');
+      try {
+        turnstile.render('#turnstile-widget', {
+          sitekey: SITEKEY,
+          callback: function(token) {
+            log('验证成功，获取到 token');
+            turnstileToken = token;
+            showSuccess();
+          },
+          'error-callback': function(error) {
+            log('验证错误: ' + error);
+            showError('验证失败，请重试');
+          },
+          'expired-callback': function() {
+            log('验证过期');
+            turnstileToken = null;
+            showError('验证已过期，请重新验证');
+            document.getElementById('submitBtn').disabled = true;
+          }
+        });
+        log('Turnstile 渲染完成');
+      } catch (e) {
+        log('渲染错误: ' + e.message);
+        showError('验证码渲染失败: ' + e.message);
+      }
+    }
+    
+    function showSuccess() {
+      const status = document.getElementById('status');
+      status.className = 'status success';
+      status.innerHTML = `
+        <svg class="status-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path>
+          <polyline points="22 4 12 14.01 9 11.01"></polyline>
+        </svg>
+        <span>验证成功!</span>
+      `;
+      document.getElementById('submitBtn').disabled = false;
+    }
+    
+    function showError(message) {
+      const status = document.getElementById('status');
+      status.className = 'status error';
+      status.innerHTML = `
+        <svg class="status-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <circle cx="12" cy="12" r="10"></circle>
+          <line x1="15" y1="9" x2="9" y2="15"></line>
+          <line x1="9" y1="9" x2="15" y2="15"></line>
+        </svg>
+        <span>${message}</span>
+      `;
+    }
+    
+    function cancel() {
+      ipcRenderer.send('turnstile-result', { success: false, cancelled: true });
+    }
+    
+    function submit() {
+      if (turnstileToken) {
+        ipcRenderer.send('turnstile-result', { success: true, token: turnstileToken });
+      } else {
+        showError('请先完成验证');
+      }
+    }
+  </script>
+</body>
+</html>

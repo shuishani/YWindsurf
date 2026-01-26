@@ -28,6 +28,7 @@ async function loadSettings() {
   loadEmailConfig();
   await loadPathSettings();
   await loadReferralLink();
+  await loadCapsolverKey();
 }
 
 // 加载语言设置
@@ -277,6 +278,63 @@ async function loadReferralLink() {
   }
 }
 
+// 保存 CapSolver API Key
+async function saveCapsolverKey() {
+  const key = document.getElementById('capsolverApiKey').value.trim();
+  try {
+    await ipcRenderer.invoke('save-capsolver-key', key);
+    showCapsolverStatus('API Key 已保存', 'success');
+  } catch (error) {
+    showCapsolverStatus('保存失败: ' + error.message, 'error');
+  }
+}
+
+// 测试 CapSolver API Key
+async function testCapsolverKey() {
+  const key = document.getElementById('capsolverApiKey').value.trim();
+  if (!key) {
+    showCapsolverStatus('请先输入 API Key', 'warning');
+    return;
+  }
+  
+  showCapsolverStatus('正在测试...', 'info');
+  try {
+    const result = await ipcRenderer.invoke('test-capsolver-key', key);
+    if (result.success) {
+      showCapsolverStatus(`测试成功！余额: $${result.balance.toFixed(4)}`, 'success');
+    } else {
+      showCapsolverStatus('测试失败: ' + result.error, 'error');
+    }
+  } catch (error) {
+    showCapsolverStatus('测试失败: ' + error.message, 'error');
+  }
+}
+
+// 加载 CapSolver API Key
+async function loadCapsolverKey() {
+  try {
+    const key = await ipcRenderer.invoke('get-capsolver-key');
+    const input = document.getElementById('capsolverApiKey');
+    if (input && key) {
+      input.value = key;
+    }
+  } catch (error) {
+    // 静默处理
+  }
+}
+
+// 显示 CapSolver 状态
+function showCapsolverStatus(message, type) {
+  const statusDiv = document.getElementById('capsolverStatus');
+  if (statusDiv) {
+    const colors = { success: '#22c55e', error: '#ef4444', warning: '#f59e0b', info: '#3b82f6' };
+    statusDiv.innerHTML = `<span style="color:${colors[type] || '#666'}; font-size:12px;">${message}</span>`;
+    if (type !== 'info') {
+      setTimeout(() => { statusDiv.innerHTML = ''; }, 5000);
+    }
+  }
+}
+
 // 导出模块并暴露到全局
 const settingsModule = {
   loadSettings,
@@ -290,7 +348,10 @@ const settingsModule = {
   resetDataPath,
   showPathStatus,
   saveReferralLink,
-  loadReferralLink
+  loadReferralLink,
+  saveCapsolverKey,
+  testCapsolverKey,
+  loadCapsolverKey
 };
 
 Object.assign(window, settingsModule);

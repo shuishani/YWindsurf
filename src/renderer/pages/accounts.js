@@ -1039,18 +1039,29 @@ async function importAccountsByPassword() {
   // TXT 格式（每行：邮箱 密码）
   const lines = text.split('\n').map(l => l.trim()).filter(l => l.length > 0);
   for (const line of lines) {
-    // 支持空格或制表符分隔
-    const parts = line.split(/[\s\t]+/);
-    if (parts.length >= 2) {
-      accounts.push({
-        email: parts[0],
-        password: parts.slice(1).join(' ')  // 密码可能包含空格
-      });
+    let email, password;
+    
+    // 优先检测 ---- 分隔符
+    if (line.includes('----')) {
+      const parts = line.split('----');
+      email = parts[0].trim();
+      password = parts.slice(1).join('----').trim();  // 密码可能包含----
+    } else {
+      // 支持空格或制表符分隔
+      const parts = line.split(/[\s\t]+/);
+      if (parts.length >= 2) {
+        email = parts[0];
+        password = parts.slice(1).join(' ');  // 密码可能包含空格
+      }
+    }
+    
+    if (email && password) {
+      accounts.push({ email, password });
     }
   }
   
   if (accounts.length === 0) {
-    resultEl.innerHTML = '<div class="status-message status-error">格式错误，请检查格式：邮箱 密码</div>';
+    resultEl.innerHTML = '<div class="status-message status-error">格式错误，请检查格式：邮箱----密码 或 邮箱 密码</div>';
     return;
   }
 
@@ -1425,14 +1436,27 @@ function showExportFormatDialog(accounts) {
       <div style="padding:16px;">
         <div style="margin-bottom:12px;">
           <label style="display:flex; align-items:center; cursor:pointer; padding:10px; border:1px solid #e5e5ea; border-radius:8px; margin-bottom:8px;">
-            <input type="radio" name="exportFormat" value="txt" checked style="margin-right:10px;">
+            <input type="radio" name="exportFormat" value="txt" checked style="margin-right:10px;" onchange="document.getElementById('txtSeparatorOptions').style.display='block'">
             <div>
               <div style="font-weight:500;">TXT 格式</div>
-              <div style="font-size:12px; color:#86868b;">每行：邮箱 密码（空格分隔）</div>
+              <div style="font-size:12px; color:#86868b;">每行：邮箱+分隔符+密码</div>
             </div>
           </label>
+          <div id="txtSeparatorOptions" style="margin-left:30px; margin-bottom:8px; padding:8px 12px; background:#f5f5f7; border-radius:6px;">
+            <div style="display:flex; align-items:center; gap:20px;">
+              <span style="font-size:12px; color:#666; white-space:nowrap;">分隔符：</span>
+              <label style="display:flex; align-items:center; cursor:pointer; gap:4px;">
+                <input type="radio" name="txtSeparator" value="----" checked>
+                <span style="font-size:13px;">----</span>
+              </label>
+              <label style="display:flex; align-items:center; cursor:pointer; gap:4px;">
+                <input type="radio" name="txtSeparator" value=" ">
+                <span style="font-size:13px;">空格</span>
+              </label>
+            </div>
+          </div>
           <label style="display:flex; align-items:center; cursor:pointer; padding:10px; border:1px solid #e5e5ea; border-radius:8px;">
-            <input type="radio" name="exportFormat" value="json" style="margin-right:10px;">
+            <input type="radio" name="exportFormat" value="json" style="margin-right:10px;" onchange="document.getElementById('txtSeparatorOptions').style.display='none'">
             <div>
               <div style="font-weight:500;">JSON 格式</div>
               <div style="font-size:12px; color:#86868b;">[{"email": "...", "password": "..."}]</div>
@@ -1461,8 +1485,9 @@ function doExportAccounts() {
   const dateStr = new Date().toISOString().split('T')[0];
   
   if (format === 'txt') {
-    // TXT 格式：邮箱 密码
-    content = accounts.map(acc => `${acc.email} ${acc.password || ''}`).join('\n');
+    // 获取用户选择的分隔符
+    const separator = document.querySelector('input[name="txtSeparator"]:checked')?.value || '----';
+    content = accounts.map(acc => `${acc.email}${separator}${acc.password || ''}`).join('\n');
     filename = `windsurf_accounts_${dateStr}.txt`;
     type = 'text/plain';
   } else {

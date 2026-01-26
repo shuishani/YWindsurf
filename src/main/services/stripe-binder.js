@@ -453,44 +453,49 @@ async function fillAndSubmitCard(page, cardInfo, addressInfo, logger) {
     // 提交 - 查找"开始试用"按钮
     logger.step(8, '点击开始试用按钮');
     
-    // 尝试多种方式查找按钮
-    let submitBtn = null;
+    // 等待1秒确保页面稳定
+    await sleep(1000);
+    
+    // 尝试多种方式查找并点击按钮
     let clicked = false;
     
-    // 1. 通过 Stripe 特定的 class 查找（SubmitButton）
-    submitBtn = await page.$('.SubmitButton, [class*="SubmitButton"]');
-    if (submitBtn) {
-      await submitBtn.click();
-      clicked = true;
+    // 1. 通过 JavaScript 直接点击（最可靠）
+    clicked = await page.evaluate(() => {
+      // 查找所有可能的提交按钮
+      const buttons = Array.from(document.querySelectorAll('button, div[role="button"], [class*="SubmitButton"]'));
+      const submitBtn = buttons.find(btn => 
+        btn.textContent.includes('开始试用') || 
+        btn.textContent.includes('Start trial') ||
+        btn.textContent.includes('Submit') ||
+        btn.textContent.includes('试用')
+      );
+      
+      if (submitBtn) {
+        submitBtn.click();
+        return true;
+      }
+      
+      // 尝试 type="submit" 按钮
+      const submitTypeBtn = document.querySelector('button[type="submit"]');
+      if (submitTypeBtn) {
+        submitTypeBtn.click();
+        return true;
+      }
+      
+      return false;
+    }).catch(() => false);
+    
+    if (clicked) {
       logger.success('已点击提交按钮');
     }
     
-    // 2. 如果没找到，通过文本查找
+    // 2. 如果 JavaScript 点击失败，尝试 Puppeteer 点击
     if (!clicked) {
-      submitBtn = await page.evaluateHandle(() => {
-        const buttons = Array.from(document.querySelectorAll('button, div[role="button"], [class*="button"], [class*="Button"]'));
-        return buttons.find(btn => 
-          btn.textContent.includes('开始试用') || 
-          btn.textContent.includes('Start trial') ||
-          btn.textContent.includes('Submit') ||
-          btn.textContent.includes('试用')
-        );
-      });
-      
-      if (submitBtn && submitBtn.asElement) {
-        await submitBtn.asElement().click();
-        clicked = true;
-        logger.success('已点击提交按钮');
-      }
-    }
-    
-    // 3. 如果还没找到，尝试 button[type="submit"]
-    if (!clicked) {
-      submitBtn = await page.$('button[type="submit"]');
+      const submitBtn = await page.$('.SubmitButton, [class*="SubmitButton"], button[type="submit"]');
       if (submitBtn) {
         await submitBtn.click();
         clicked = true;
-        logger.success('已点击提交按钮');
+        logger.success('已点击提交按钮(备用方式)');
       }
     }
     

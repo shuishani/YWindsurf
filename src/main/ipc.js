@@ -6,6 +6,7 @@
 const { ipcMain, dialog, shell, app } = require('electron');
 const { registerHomeIPC } = require('./services/home-ipc');
 const { initStripeHandlers } = require('./services/stripe-handler');
+const { initTurnstileHandlers } = require('./services/turnstile-handler');
 const path = require('path');
 const fs = require('fs').promises;
 const VersionChecker = require('./services/version-checker');
@@ -42,6 +43,9 @@ function registerAllIPC(app, mainWindow) {
   
   // 注册Stripe绑卡IPC
   initStripeHandlers(mainWindow);
+  
+  // 注册验证码处理IPC
+  initTurnstileHandlers(mainWindow);
   
   // 监听前端刷新数据请求，广播给所有渲染进程
   ipcMain.on('refresh-data', () => {

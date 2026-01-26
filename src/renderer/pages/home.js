@@ -336,13 +336,19 @@ async function startBatchRegister() {
   const bindCardText = autoBindCard ? '，自动绑卡' : '，不绑卡';
   addRegistrationLog(`开始批量注册 ${count} 个账号，并发数：${concurrent}${bindCardText}...`, 'info');
   
+  // 获取用户选择的虚拟卡ID
+  const selectedCardId = typeof window.getSelectedCardId === 'function' 
+    ? window.getSelectedCardId() 
+    : 'auto';
+  
   try {
     const result = await ipcRenderer.invoke('batch-register', {
       count,
       concurrent,
       emailDomains: config.emailDomains,
       emailConfig: config.emailConfig,
-      autoBindCard: autoBindCard
+      autoBindCard: autoBindCard,
+      selectedCardId: selectedCardId
     });
     
     // 注册完成后刷新账号列表
@@ -355,46 +361,54 @@ async function startBatchRegister() {
         await accounts.loadAccounts();
       }
       
-      // 如果启用了自动绑卡且有需要绑卡的账号，关闭注册日志，打开绑卡日志
+      // 如果启用了自动绑卡且有需要绑卡的账号
+      // 注意：注册流程中已经在同一个浏览器中完成了绑卡，这里只需要处理未绑卡的账号
       if (autoBindCard && result.savedAccounts && result.savedAccounts.length > 0) {
-        addRegistrationLog(`\n注册完成，即将开始绑卡...`, 'info');
+        // 过滤出未绑卡的账号（cardBound !== true）
+        const unboundAccounts = result.savedAccounts.filter(acc => !acc.cardBound);
         
-        // 延迟一下让用户看到提示
-        await new Promise(resolve => setTimeout(resolve, 1000));
-        
-        // 关闭注册日志窗口
-        hideRegistrationLog();
-        
-        // 准备绑卡账号列表
-        const bindAccounts = result.savedAccounts.map(acc => ({
-          email: acc.email,
-          password: acc.password
-        }));
-        
-        // 显示绑卡日志窗口
-        if (typeof window.showBindingLog === 'function') {
-          window.showBindingLog();
-        }
-        
-        // 调用批量绑卡
-        try {
-          const selectedCardId = typeof window.getSelectedCardId === 'function' 
-            ? window.getSelectedCardId() 
-            : 'auto';
+        if (unboundAccounts.length > 0) {
+          addRegistrationLog(`\n注册完成，${unboundAccounts.length} 个账号需要绑卡...`, 'info');
           
-          const concurrent = parseInt(document.getElementById('concurrentCount').value) || 5;
-          await ipcRenderer.invoke('batch-api-bind-cards', { 
-            accounts: bindAccounts, 
-            selectedCardId: selectedCardId,
-            concurrent: concurrent
-          });
+          // 延迟一下让用户看到提示
+          await new Promise(resolve => setTimeout(resolve, 1000));
           
-          // 刷新账号列表
-          if (accounts && accounts.loadAccounts) {
-            await accounts.loadAccounts();
+          // 关闭注册日志窗口
+          hideRegistrationLog();
+          
+          // 准备绑卡账号列表
+          const bindAccounts = unboundAccounts.map(acc => ({
+            email: acc.email,
+            password: acc.password
+          }));
+          
+          // 显示绑卡日志窗口
+          if (typeof window.showBindingLog === 'function') {
+            window.showBindingLog();
           }
-        } catch (bindError) {
-          console.error('自动绑卡异常:', bindError.message);
+          
+          // 调用批量绑卡
+          try {
+            const selectedCardId = typeof window.getSelectedCardId === 'function' 
+              ? window.getSelectedCardId() 
+              : 'auto';
+            
+            const concurrent = parseInt(document.getElementById('concurrentCount').value) || 5;
+            await ipcRenderer.invoke('batch-api-bind-cards', { 
+              accounts: bindAccounts, 
+              selectedCardId: selectedCardId,
+              concurrent: concurrent
+            });
+            
+            // 刷新账号列表
+            if (accounts && accounts.loadAccounts) {
+              await accounts.loadAccounts();
+            }
+          } catch (bindError) {
+            console.error('自动绑卡异常:', bindError.message);
+          }
+        } else {
+          addRegistrationLog(`\n注册完成，所有账号已在注册时完成绑卡！`, 'success');
         }
       }
     } else {

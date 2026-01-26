@@ -235,8 +235,8 @@ class RegistrationBot {
       const response = await connect({
         headless: false,
         fingerprint: true,  // 启用指纹伪装
-        turnstile: true,    // 自动处理 Cloudflare Turnstile
-        tf: true,
+        turnstile: false,   // 禁用自动处理，避免窗口乱跳
+        tf: false,
         args: browserArgs
       });
       
@@ -471,6 +471,100 @@ class RegistrationBot {
       const duration = Math.round((Date.now() - startTime) / 1000);
       this.logger.complete('注册完成', `${email} | 耗时${duration}秒`);
       
+      // 如果启用了自动绑卡，直接在当前浏览器中进行绑卡
+      if (this.autoBindCard) {
+        this.logger.info('开始自动绑卡...');
+        
+        try {
+          // 跳转到 pricing 页面
+          await page.goto('https://windsurf.com/pricing', { waitUntil: 'networkidle2', timeout: 30000 });
+          await this.sleep(2000);
+          
+          // 点击 Start Free Trial
+          this.logger.info('点击 Start Free Trial...');
+          await page.evaluate(() => {
+            const buttons = document.querySelectorAll('button, a');
+            for (const btn of buttons) {
+              const text = btn.textContent?.trim();
+              if (text && (text.includes('Start Free Trial') || text.includes('Start free trial'))) {
+                btn.click();
+                return true;
+              }
+            }
+            return false;
+          });
+          
+          // 等待验证或直接跳转到 Stripe 页面
+          this.logger.info('等待验证或跳转...');
+          let stripeReached = false;
+          
+          for (let i = 0; i < 90; i++) {
+            await this.sleep(1000);
+            
+            // 先检查是否已经在 Stripe 页面
+            const currentUrl = page.url();
+            if (currentUrl.includes('checkout.stripe.com')) {
+              stripeReached = true;
+              this.logger.success('已到达 Stripe 页面');
+              break;
+            }
+            
+            // 尝试点击 Continue 按钮（使用 Puppeteer 方式，与注册流程一致）
+            let clicked = false;
+            
+            // 方式1: 通过 button[type="submit"]
+            try {
+              const submitBtn = await page.$('button[type="submit"]');
+              if (submitBtn) {
+                await submitBtn.click();
+                clicked = true;
+                this.logger.success('已点击 Continue (submit)');
+              }
+            } catch (e) {}
+            
+            // 方式2: 通过文本匹配
+            if (!clicked) {
+              try {
+                const buttons = await page.$$('button');
+                for (const btn of buttons) {
+                  const text = await page.evaluate(el => el.textContent, btn);
+                  if (text && (text.includes('Continue') || text.includes('继续'))) {
+                    await btn.click();
+                    clicked = true;
+                    this.logger.success('已点击 Continue (text)');
+                    break;
+                  }
+                }
+              } catch (e) {}
+            }
+            
+            if (clicked) {
+              await this.sleep(2000);
+            }
+            
+            if (i > 0 && i % 15 === 0) {
+              this.logger.info(`等待中... (${i}秒)`);
+            }
+          }
+          
+          if (stripeReached) {
+            // 返回浏览器和页面，让调用方继续绑卡
+            return {
+              success: true,
+              email,
+              password,
+              firstName,
+              lastName,
+              browser,
+              page,
+              needsBinding: true
+            };
+          }
+        } catch (bindError) {
+          this.logger.warning('自动绑卡失败', bindError.message);
+        }
+      }
+      
       return {
         success: true,
         email,
@@ -481,27 +575,14 @@ class RegistrationBot {
 
     } catch (error) {
       this.logger.error('注册失败', error.message);
+      // 注册失败时关闭浏览器
+      if (browser) {
+        try { await browser.close(); } catch (e) {}
+      }
       return {
         success: false,
         error: error.message
       };
-    } finally {
-      // 确保浏览器关闭，避免卡住
-      if (browser) {
-        try {
-          await browser.close();
-          this.logger.info('浏览器已关闭');
-        } catch (e) {
-          // 强制关闭
-          try {
-            const pages = await browser.pages();
-            for (const p of pages) {
-              await p.close().catch(() => {});
-            }
-            await browser.close().catch(() => {});
-          } catch (e2) {}
-        }
-      }
     }
   }
 
@@ -544,8 +625,90 @@ class RegistrationBot {
             }
           };
           
-          return taskBot.registerAccount(taskLogCallback, index).then(result => {
-            // 更新计数器（registerAccount方法已经输出了完成日志，这里不需要重复输出）
+          return taskBot.registerAccount(taskLogCallback, index).then(async result => {
+            // 如果注册成功且返回了浏览器，需要进行绑卡
+            if (result.success && result.needsBinding && result.browser && result.page) {
+              try {
+                taskLogCallback('开始填写卡信息...');
+                const { bindCard } = require('./stripe-binder');
+                const stripeHandler = require('./stripe-handler');
+                
+                // 选择虚拟卡（使用用户选择的卡或自动选择）
+                taskLogCallback('选择虚拟卡...');
+                const selectedCardId = this.config.selectedCardId;
+                const cardData = selectedCardId && selectedCardId !== 'auto'
+                  ? await stripeHandler.selectCardById(selectedCardId)
+                  : await stripeHandler.selectAvailableCard();
+                
+                if (cardData) {
+                  const cardInfo = stripeHandler.generateCardInfo(cardData);
+                  taskLogCallback(`卡信息: ${cardInfo.cardNumber} | ${cardInfo.expiry}`);
+                  
+                  // 等待页面稳定
+                  await new Promise(resolve => setTimeout(resolve, 3000));
+                  
+                  // 填写卡信息
+                  taskLogCallback('调用 bindCard...');
+                  const bindResult = await bindCard(result.page, null, cardInfo, index);
+                  taskLogCallback(`bindCard 返回: ${JSON.stringify(bindResult)}`);
+                  
+                  if (bindResult.success) {
+                    taskLogCallback('绑卡成功');
+                    result.cardBound = true;
+                  } else if (bindResult.pending) {
+                    taskLogCallback('等待支付处理...');
+                    // 等待成功页面（最多60秒）- 与单独绑卡逻辑一致
+                    let bindSuccess = false;
+                    for (let w = 0; w < 60; w++) {
+                      await new Promise(resolve => setTimeout(resolve, 1000));
+                      try {
+                        // 检测URL（与单独绑卡一致）
+                        const currentUrl = result.page.url();
+                        if (currentUrl.includes('payment-success') || currentUrl.includes('billing/payment-success')) {
+                          bindSuccess = true;
+                          taskLogCallback('检测到成功页面');
+                          break;
+                        }
+                        // 备用：检测页面内容
+                        const pageContent = await result.page.evaluate(() => document.body.innerText);
+                        if (pageContent.includes('Thanks') || pageContent.includes('Success') || 
+                            pageContent.includes('感谢') || pageContent.includes('成功')) {
+                          bindSuccess = true;
+                          taskLogCallback('检测到成功页面');
+                          break;
+                        }
+                      } catch (e) {
+                        break; // 页面已关闭
+                      }
+                    }
+                    result.cardBound = bindSuccess;
+                    if (bindSuccess) {
+                      taskLogCallback('绑卡成功');
+                    } else {
+                      taskLogCallback('绑卡超时或失败');
+                    }
+                  } else {
+                    taskLogCallback(`绑卡失败: ${bindResult.error || '未知错误'}`);
+                  }
+                } else {
+                  taskLogCallback('没有可用的虚拟卡');
+                }
+                
+                // 关闭浏览器
+                await result.browser.close().catch(() => {});
+                taskLogCallback('浏览器已关闭');
+              } catch (bindError) {
+                taskLogCallback(`绑卡异常: ${bindError.message}`);
+                console.error('绑卡异常详情:', bindError);
+                try { await result.browser.close(); } catch (e) {}
+              }
+              
+              // 清除浏览器对象，避免 IPC 序列化错误
+              delete result.browser;
+              delete result.page;
+            }
+            
+            // 更新计数器
             if (result.success) {
               completed++;
             } else {
@@ -617,7 +780,7 @@ class RegistrationBot {
               password: result.password,
               firstName: result.firstName,
               lastName: result.lastName,
-              cardBound: false, // 默认未绑卡
+              cardBound: result.cardBound || false, // 使用注册时的绑卡状态
               createdAt: new Date().toISOString()
             };
             

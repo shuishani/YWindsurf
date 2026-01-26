@@ -206,6 +206,7 @@ async function getAccountCreditsByRefreshToken(refreshToken, email = null, passw
     let tokenResult = await refreshIdToken(refreshToken);
     let newRefreshToken = null;
     let usedFallback = false;
+    let tokenEmail = null;  // 从 Token 解析的邮箱
     
     // 2. 如果 Token 刷新失败，尝试用邮箱密码重新登录（仅当有密码时）
     if (!tokenResult.success) {
@@ -215,9 +216,11 @@ async function getAccountCreditsByRefreshToken(refreshToken, email = null, passw
           tokenResult = {
             success: true,
             idToken: loginResult.idToken,
-            refreshToken: loginResult.refreshToken
+            refreshToken: loginResult.refreshToken,
+            email: loginResult.email
           };
           newRefreshToken = loginResult.refreshToken;
+          tokenEmail = loginResult.email;
           usedFallback = true;
         } else {
           return { success: false, error: 'Token刷新失败，密码登录也失败: ' + loginResult.error };
@@ -228,6 +231,7 @@ async function getAccountCreditsByRefreshToken(refreshToken, email = null, passw
       }
     } else {
       newRefreshToken = tokenResult.refreshToken;
+      tokenEmail = tokenResult.email;  // 从 JWT 解析的邮箱
     }
     
     // 3. 获取完整信息
@@ -237,11 +241,11 @@ async function getAccountCreditsByRefreshToken(refreshToken, email = null, passw
       return { success: false, error: 'API调用失败: ' + (fullInfo.error || '未知错误') };
     }
     
-    // 4. 返回格式化的数据
+    // 4. 返回格式化的数据（优先使用从 Token 解析的邮箱）
     return {
       success: true,
       data: {
-        email: fullInfo.user?.email || '',
+        email: tokenEmail || fullInfo.user?.email || email || '',
         name: fullInfo.user?.name || fullInfo.user?.displayName || '',
         usedPromptCredits: fullInfo.usage.displayPromptUsed ?? 0,
         monthlyPromptCredits: fullInfo.usage.displayPromptLimit ?? 0,

@@ -466,6 +466,23 @@
             </div>
           </div>
 
+          <!-- 验证码配置 -->
+          <div class="settings-group">
+            <h3>验证码配置</h3>
+            <div class="form-group compact">
+              <label>CapSolver API Key（可选）</label>
+              <div style="display:flex; gap:8px;">
+                <input type="password" id="capsolverApiKey" placeholder="留空则使用浏览器方式获取验证码" style="flex:1;">
+                <button class="btn btn-primary" onclick="saveCapsolverKey()">保存</button>
+                <button class="btn btn-outline" onclick="testCapsolverKey()">测试</button>
+              </div>
+              <div style="font-size:12px; color:#86868b; margin-top:4px;">
+                CapSolver 可自动解决验证码，无需打开浏览器。<a href="https://www.capsolver.com/" target="_blank" style="color:#007aff;">注册获取 API Key</a>（新用户有免费额度）
+              </div>
+              <div id="capsolverStatus" style="margin-top:4px;"></div>
+            </div>
+          </div>
+
           <!-- 下部分：左右分栏 -->
           <div class="settings-row compact">
             <!-- YWindsurf 数据路径 (占据更多空间) -->
