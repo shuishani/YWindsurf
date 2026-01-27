@@ -287,11 +287,11 @@ function generateAccountRowHTML(acc, styles, isCurrentAccount = false, index = 0
   const indexStr = index > 0 ? `${index}. ` : '';
 
   return `
-    <tr data-id="${acc.id}" class="${rowClass}">
+    <tr data-id="${acc.id}" class="${rowClass}" onclick="toggleAccountCheckbox('${acc.id}')" style="cursor: pointer;">
       <td style="width: 40px; text-align: center;" onclick="event.stopPropagation()">
-        <input type="checkbox" class="account-checkbox" data-email="${acc.email}" data-password="${acc.password}" onchange="updateSelectedBindCount()">
+        <input type="checkbox" class="account-checkbox" data-email="${acc.email}" data-password="${acc.password}" data-id="${acc.id}" onchange="updateSelectedBindCount()">
       </td>
-      <td ondblclick="copyAccountRow('${acc.email}', '${acc.password}'); event.stopPropagation();" style="cursor: pointer;" title="双击复制账号密码">
+      <td ondblclick="copyAccountRow('${acc.email}', '${acc.password}'); event.stopPropagation();" title="双击复制账号密码">
         <div class="account-email-cell">${indexStr}${acc.email}</div>
       </td>
       <td>
@@ -542,7 +542,8 @@ function toggleActionMenu(event, id) {
       <div class="action-menu-item" onclick="pinAccount('${acc.id}'); document.getElementById('accountActionMenu')?.remove();">${getMenuIcon('arrowUp')}置顶账号</div>
       <div class="action-menu-item" onclick="switchAccount('${acc.email}', '${acc.password || ''}', '${acc.refreshToken || ''}', '${acc.apiKey || ''}', '${acc.name || ''}'); document.getElementById('accountActionMenu')?.remove();">${getMenuIcon('repeat')}切换账号</div>
       <div class="action-menu-item" onclick="viewAccount('${acc.email}', '${acc.password}'); document.getElementById('accountActionMenu')?.remove();">${getMenuIcon('eye')}查看详情</div>
-      <div class="action-menu-item" onclick="getPaymentLinkForAccount('${acc.email}'); document.getElementById('accountActionMenu')?.remove();">${getMenuIcon('link')}获取绑卡链接</div>
+      <div class="action-menu-item" onclick="loginBindAccount('${acc.email}', '${acc.password}'); document.getElementById('accountActionMenu')?.remove();">${getMenuIcon('creditCard')}登录绑卡</div>
+      <div class="action-menu-item" onclick="getPaymentLinkForAccount('${acc.email}'); document.getElementById('accountActionMenu')?.remove();">${getMenuIcon('link')}获取链接</div>
       <div class="action-menu-item" onclick="editAccount('${acc.id}', '${acc.email}', '${acc.password}'); document.getElementById('accountActionMenu')?.remove();">${getMenuIcon('edit')}编辑账号</div>
       <div class="action-menu-item danger" onclick="deleteAccountFromTable('${acc.id}', '${acc.email}'); document.getElementById('accountActionMenu')?.remove();">${getMenuIcon('trash')}删除账号</div>
     </div>
@@ -1269,6 +1270,15 @@ function updateSelectedBindCount() {
   }
 }
 
+// 点击行切换复选框状态
+function toggleAccountCheckbox(accountId) {
+  const checkbox = document.querySelector(`.account-checkbox[data-id="${accountId}"]`);
+  if (checkbox) {
+    checkbox.checked = !checkbox.checked;
+    updateSelectedBindCount();
+  }
+}
+
 // 选择未绑卡账号
 async function selectUnboundAccounts() {
   let count = 0;
@@ -1741,7 +1751,7 @@ async function retryBindingForAccount(email, password) {
   }
 }
 
-// 开始批量绑卡（API方式）
+// 开始批量绑卡（显示方式选择弹窗）
 async function startApiBatchBinding() {
   const selectedAccounts = getSelectedAccounts();
   
@@ -1758,28 +1768,75 @@ async function startApiBatchBinding() {
   // 获取选中的虚拟卡
   const selectedCardId = getSelectedCardId();
   
-  // 检查是否选择了完整卡且批量绑卡
-  if (selectedCardId !== 'auto' && accounts.length > 1) {
-    try {
-      const result = await ipcRenderer.invoke('get-cards');
-      if (result.success && result.cards) {
-        const selectedCard = result.cards.find(c => c.id === selectedCardId);
-        if (selectedCard && selectedCard.type === 'full') {
-          showConfirmDialog(
-            '风险提示',
-            `你选择了完整卡进行批量绑卡（${accounts.length}个账号）。\n\n使用同一张完整卡绑定多个账号可能导致风控。\n\n确定要继续吗？`,
-            () => executeApiBatchBinding(accounts, selectedCardId),
-            () => logger.warning('用户取消了API批量绑卡操作')
-          );
-          return;
-        }
-      }
-    } catch (error) {
-      // 静默处理
-    }
-  }
+  // 显示绑卡方式选择弹窗
+  showBindingMethodDialog(accounts, selectedCardId);
+}
+
+// 显示绑卡方式选择弹窗
+function showBindingMethodDialog(accounts, selectedCardId) {
+  const modalHTML = `
+    <div id="bindingMethodModal" class="modal-overlay" style="display:flex;">
+      <div class="modal-dialog" style="max-width:400px;">
+        <div class="modal-header">
+          <span>选择绑卡方式</span>
+          <button onclick="document.getElementById('bindingMethodModal').remove()" style="background:none; border:none; cursor:pointer; font-size:20px; color:#6e6e73;">×</button>
+        </div>
+        <div class="modal-body" style="padding:20px;">
+          <p style="margin-bottom:16px; color:#1d1d1f;">共选择 <strong>${accounts.length}</strong> 个账号进行绑卡</p>
+          <div style="display:flex; flex-direction:column; gap:12px;">
+            <button class="btn btn-primary" style="padding:12px; font-size:14px;" onclick="executeBindingWithMethod('api', ${JSON.stringify(accounts).replace(/"/g, '&quot;')}, '${selectedCardId}')">
+              API绑卡（推荐）
+              <div style="font-size:12px; color:rgba(255,255,255,0.8); margin-top:4px;">通过API获取链接，自动填写卡信息</div>
+            </button>
+            <button class="btn btn-secondary" style="padding:12px; font-size:14px;" onclick="executeBindingWithMethod('browser', ${JSON.stringify(accounts).replace(/"/g, '&quot;')}, '${selectedCardId}')">
+              登录绑卡
+              <div style="font-size:12px; color:#86868b; margin-top:4px;">打开浏览器登录后进入绑卡页面</div>
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  `;
   
-  executeApiBatchBinding(accounts, selectedCardId);
+  document.body.insertAdjacentHTML('beforeend', modalHTML);
+}
+
+// 根据选择的方式执行绑卡
+async function executeBindingWithMethod(method, accounts, selectedCardId) {
+  // 关闭弹窗
+  document.getElementById('bindingMethodModal')?.remove();
+  
+  if (method === 'browser') {
+    // 登录绑卡方式：使用浏览器登录获取链接
+    await executeBrowserBatchBinding(accounts, selectedCardId);
+  } else {
+    // API绑卡方式
+    executeApiBatchBinding(accounts, selectedCardId);
+  }
+}
+
+// 执行浏览器登录批量绑卡（和API绑卡逻辑一样，只是获取链接方式不同）
+async function executeBrowserBatchBinding(accounts, selectedCardId) {
+  showBindingLog();
+  
+  // 清空待确认列表
+  pendingBindingAccounts = [];
+  renderPendingAccounts();
+  
+  try {
+    // 使用浏览器方式获取链接，其他逻辑和API绑卡一样
+    const result = await ipcRenderer.invoke('batch-api-bind-cards', { 
+      accounts, 
+      selectedCardId,
+      useBrowser: true  // 标记使用浏览器方式获取链接
+    });
+    
+    if (result && (result.successCount > 0 || result.pendingCount > 0)) {
+      await loadAccounts();
+    }
+  } catch (error) {
+    showToast('批量绑卡异常: ' + error.message, 'error');
+  }
 }
 
 // 执行 API 批量绑卡
@@ -1821,7 +1878,24 @@ async function apiBindSingleAccount(email, password) {
   }
 }
 
-// 获取单个账号的绑卡链接
+// 登录绑卡（打开浏览器登录后进入绑卡页面）
+async function loginBindAccount(email, password) {
+  showToast('正在打开浏览器登录...', 'info', 0);
+  
+  try {
+    const result = await ipcRenderer.invoke('browser-bind-single', { email, password });
+    
+    if (result && result.success) {
+      showToast('绑卡页面已打开，请在浏览器中完成绑卡', 'success');
+    } else {
+      showToast('登录绑卡失败: ' + (result?.error || '未知错误'), 'error');
+    }
+  } catch (error) {
+    showToast('登录绑卡异常: ' + error.message, 'error');
+  }
+}
+
+// 获取单个账号的绑卡链接（复制到剪贴板）
 async function getPaymentLinkForAccount(email) {
   // 从缓存中找到账号
   const account = accountsCache.find(acc => acc.email === email);
@@ -1830,13 +1904,15 @@ async function getPaymentLinkForAccount(email) {
     return;
   }
   
-  showToast('正在获取绑卡链接...', 'info');
   await getPaymentLinkOnly(email, account.password);
 }
 
 // 仅获取支付链接（不打开浏览器）
 async function getPaymentLinkOnly(email, password) {
   try {
+    // 显示获取中状态
+    showToast('正在获取支付链接...', 'info', 0); // 0 = 不自动消失
+    
     const result = await ipcRenderer.invoke('get-payment-link', { email, password });
     
     if (result && result.success && result.paymentLink) {
@@ -1852,6 +1928,56 @@ async function getPaymentLinkOnly(email, password) {
     showToast('获取支付链接异常: ' + error.message, 'error');
     return null;
   }
+}
+
+// 批量获取绑卡链接并复制到剪贴板
+async function batchGetPaymentLinks() {
+  const checkboxes = document.querySelectorAll('.account-checkbox:checked');
+  if (checkboxes.length === 0) {
+    showToast('请先选择要获取链接的账号', 'warning');
+    return;
+  }
+  
+  const accounts = [];
+  checkboxes.forEach(cb => {
+    accounts.push({
+      email: cb.dataset.email,
+      password: cb.dataset.password
+    });
+  });
+  
+  showToast(`正在获取 ${accounts.length} 个账号的绑卡链接...`, 'info', 0);
+  
+  const links = [];
+  let successCount = 0;
+  
+  for (let i = 0; i < accounts.length; i++) {
+    const acc = accounts[i];
+    showToast(`正在获取 (${i + 1}/${accounts.length}): ${acc.email}...`, 'info', 0);
+    
+    try {
+      const result = await ipcRenderer.invoke('get-payment-link', { 
+        email: acc.email, 
+        password: acc.password 
+      });
+      
+      if (result && result.success && result.paymentLink) {
+        links.push(`${acc.email}\n${result.paymentLink}`);
+        successCount++;
+      } else {
+        links.push(`${acc.email}\n获取失败: ${result?.error || '未知错误'}`);
+      }
+    } catch (error) {
+      links.push(`${acc.email}\n获取异常: ${error.message}`);
+    }
+  }
+  
+  // 复制到剪贴板
+  const allLinks = links.join('\n\n');
+  await navigator.clipboard.writeText(allLinks);
+  
+  showToast(`获取完成！成功 ${successCount}/${accounts.length} 个，已复制到剪贴板`, 
+    successCount === accounts.length ? 'success' : 'warning');
 }
 
 // 用户确认绑卡成功
@@ -2248,6 +2374,7 @@ const accountsModule = {
   doAddAccounts,
   toggleSelectAllAccounts,
   updateSelectedBindCount,
+  toggleAccountCheckbox,
   switchAccount,
   markCardBound,
   toggleAddAccountMenu,
@@ -2296,10 +2423,15 @@ const accountsModule = {
   pinAccount,
   // 绑卡功能
   startApiBatchBinding,
+  showBindingMethodDialog,
+  executeBindingWithMethod,
+  executeBrowserBatchBinding,
   executeApiBatchBinding,
   apiBindSingleAccount,
   getPaymentLinkOnly,
   getPaymentLinkForAccount,
+  loginBindAccount,
+  batchGetPaymentLinks,
   showBindingLog
 };
 

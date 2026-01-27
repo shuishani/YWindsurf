@@ -17,6 +17,12 @@ class RegistrationBot {
     this.autoBindCard = config.autoBindCard !== undefined ? config.autoBindCard : true;
     // 邀请链接（可选）
     this.referralLink = config.referralLink || '';
+    // 邮箱类型: 'domain' 或 '126'
+    this.emailType = config.emailType || 'domain';
+    // 126 邮箱配置
+    this.email126Config = config.email126Config || { accounts: [], mailType: '126' };
+    // 126 邮箱账号索引
+    this.email126Index = 0;
   }
 
   /**
@@ -34,10 +40,88 @@ class RegistrationBot {
   }
 
   /**
+   * 生成注册邮箱
+   * 根据邮箱类型返回域名邮箱或 126/163 邮箱
+   */
+  async generateTempEmail() {
+    // 如果使用 126/163 邮箱
+    if (this.emailType === '126') {
+      return this.getNext126Email();
+    }
+    
+    // 域名邮箱模式
+    return this.generateDomainEmail();
+  }
+
+  /**
+   * 获取下一个 126/163 邮箱账号
+   * 直接从账号列表取第一个，注册成功后会从列表中移除
+   */
+  getNext126Email() {
+    const accounts = this.email126Config.accounts || [];
+    if (accounts.length === 0) {
+      throw new Error('没有可用的 126/163 邮箱账号，请在设置中配置或重新加载文件');
+    }
+    
+    // 取第一个账号
+    const account = accounts[0];
+    
+    // 保存当前使用的账号信息，供后续获取验证码使用
+    this.current126Account = account;
+    
+    this.logger.info('使用126邮箱', `${account.email} (剩余 ${accounts.length - 1} 个)`);
+    return account.email;
+  }
+  
+  /**
+   * 标记 126 邮箱注册成功，从待用列表移除，保存到已用文件
+   */
+  async mark126EmailUsed(email) {
+    if (this.emailType !== '126') return;
+    
+    try {
+      const fs = require('fs').promises;
+      const path = require('path');
+      const windsurfPaths = require('../../shared/config/windsurf-paths');
+      const dataDir = windsurfPaths.getJsonDataDir();
+      const SETTINGS_FILE = path.join(dataDir, 'settings.json');
+      const USED_126_FILE = path.join(dataDir, 'used-126-emails.txt');
+      
+      // 读取设置
+      let settings = {};
+      try {
+        const data = await fs.readFile(SETTINGS_FILE, 'utf-8');
+        settings = JSON.parse(data);
+      } catch (e) {}
+      
+      // 从账号列表中移除
+      if (settings.email126Config && settings.email126Config.accounts) {
+        const account = settings.email126Config.accounts.find(acc => acc.email === email);
+        settings.email126Config.accounts = settings.email126Config.accounts.filter(
+          acc => acc.email !== email
+        );
+        // 同时更新内存中的列表
+        this.email126Config.accounts = settings.email126Config.accounts;
+        
+        // 追加到已用邮箱文件（格式：邮箱----授权码）
+        if (account) {
+          const line = `${account.email}----${account.password}\n`;
+          await fs.appendFile(USED_126_FILE, line, 'utf-8');
+        }
+      }
+      
+      await fs.writeFile(SETTINGS_FILE, JSON.stringify(settings, null, 2));
+      this.logger.info('126邮箱已使用', `${email} (剩余 ${settings.email126Config?.accounts?.length || 0} 个)`);
+    } catch (e) {
+      this.logger.warning('标记126邮箱失败', e.message);
+    }
+  }
+
+  /**
    * 生成域名邮箱
    * 格式: 随机字母 + 编号 + 随机字母数字组合
    */
-  async generateTempEmail() {
+  generateDomainEmail() {
     // 生成随机前缀字母(1-3位)
     const letters = 'abcdefghijklmnopqrstuvwxyz';
     const prefixLength = Math.floor(Math.random() * 3) + 1;
@@ -71,18 +155,34 @@ class RegistrationBot {
   }
 
   /**
-   * 获取邮箱验证码（使用本地EmailReceiver）
+   * 获取邮箱验证码
+   * 根据邮箱类型使用不同的接收器
    * 支持重试机制：最多重试3次，每次间隔30秒
    */
   async getVerificationCode(email, maxWaitTime = 120000) {
-    const emailConfig = this.config.emailConfig;
+    // 根据邮箱类型选择接收器
+    let receiver;
     
-    if (!emailConfig || !emailConfig.host) {
-      throw new Error('邮箱配置不完整，请检查 emailConfig');
+    if (this.emailType === '126') {
+      // 使用 126/163 邮箱 POP3 接收器
+      if (!this.current126Account) {
+        throw new Error('126邮箱账号信息丢失');
+      }
+      const Email126Receiver = require('./email-126');
+      receiver = new Email126Receiver({
+        user: this.current126Account.email,
+        password: this.current126Account.password,
+        mailType: this.email126Config.mailType || '126'
+      });
+    } else {
+      // 使用域名邮箱 IMAP 接收器
+      const emailConfig = this.config.emailConfig;
+      if (!emailConfig || !emailConfig.host) {
+        throw new Error('邮箱配置不完整，请检查 emailConfig');
+      }
+      const EmailReceiver = require('./email');
+      receiver = new EmailReceiver(emailConfig);
     }
-
-    const EmailReceiver = require('./email');
-    const receiver = new EmailReceiver(emailConfig);
     
     const maxRetries = 3;
     const retryInterval = 30000; // 30秒
@@ -808,13 +908,17 @@ class RegistrationBot {
             
             accounts.push(account);
             savedAccounts.push(account);
+            
+            // 如果使用 126 邮箱，标记该邮箱已使用（从待用列表移除）
+            if (this.emailType === '126') {
+              await this.mark126EmailUsed(result.email);
+            }
           }
         }
         
         // 一次性写入所有账号
         if (savedAccounts.length > 0) {
           await fs.writeFile(ACCOUNTS_FILE, JSON.stringify(accounts, null, 2));
-          
           this.logger.success('账号批量保存完成', `成功保存 ${savedAccounts.length} 个账号`);
         }
         

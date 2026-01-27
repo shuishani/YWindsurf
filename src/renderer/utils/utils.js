@@ -4,8 +4,12 @@
 
 const { ipcRenderer } = require('electron');
 
-// Toast 提示
-function showToast(message, type = 'success') {
+// Toast 提示 (duration: 毫秒, 0 = 不自动消失)
+function showToast(message, type = 'success', duration = 2000) {
+  // 移除之前的同类型 toast
+  const existingToasts = document.querySelectorAll('.toast');
+  existingToasts.forEach(t => t.remove());
+  
   const toast = document.createElement('div');
   toast.className = `toast ${type}`;
   toast.innerHTML = `<span>${message}</span>`;
@@ -33,14 +37,16 @@ function showToast(message, type = 'success') {
   
   document.body.appendChild(toast);
   
-  setTimeout(() => {
-    toast.style.animation = 'slideIn 0.3s ease reverse';
+  if (duration > 0) {
     setTimeout(() => {
-      if (document.body.contains(toast)) {
-        document.body.removeChild(toast);
-      }
-    }, 300);
-  }, 2000);
+      toast.style.animation = 'slideIn 0.3s ease reverse';
+      setTimeout(() => {
+        if (document.body.contains(toast)) {
+          document.body.removeChild(toast);
+        }
+      }, 300);
+    }, duration);
+  }
 }
 
 // 计算到期时间

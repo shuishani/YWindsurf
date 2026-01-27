@@ -214,13 +214,40 @@ async function fillAndSubmitCard(page, cardInfo, addressInfo, logger) {
     if (!isExpanded) {
       logger.progress('点击展开银行卡区域');
       const clicked = await page.evaluate(() => {
-        const cardButton = document.querySelector('[data-testid="card-accordion-item-button"]');
-        if (cardButton) { cardButton.click(); return true; }
+        // 尝试多种选择器
+        const selectors = [
+          '[data-testid="card-accordion-item-button"]',
+          'button[aria-controls*="card"]',
+          '[role="button"][aria-expanded="false"]',
+          '.AccordionItem button',
+          'button:has-text("Card")',
+          'div[class*="accordion"] button'
+        ];
+        
+        for (const selector of selectors) {
+          try {
+            const btn = document.querySelector(selector);
+            if (btn) { btn.click(); return true; }
+          } catch (e) {}
+        }
+        
+        // 尝试通过文本查找
+        const buttons = document.querySelectorAll('button, [role="button"]');
+        for (const btn of buttons) {
+          if (btn.textContent && (btn.textContent.includes('Card') || btn.textContent.includes('卡'))) {
+            btn.click();
+            return true;
+          }
+        }
+        
         return false;
       });
-      if (!clicked) throw new Error('未找到银行卡展开按钮');
-      await sleep(800);
-      logger.success('银行卡区域已展开');
+      if (!clicked) {
+        logger.warning('未找到银行卡展开按钮，尝试继续');
+      } else {
+        await sleep(800);
+        logger.success('银行卡区域已展开');
+      }
     } else {
       logger.success('银行卡区域已展开');
     }
@@ -273,18 +300,25 @@ async function fillAndSubmitCard(page, cardInfo, addressInfo, logger) {
     // 填写账单地址
     logger.step(4, '填写账单信息');
     
-    // 点击"手动输入地址"按钮（如果存在）
+    // 点击"手动输入地址"链接（如果存在）
     try {
-      const manualAddressBtn = await page.evaluateHandle(() => {
-        return Array.from(document.querySelectorAll('button')).find(btn => 
-          btn.textContent.includes('手动输入地址') || 
-          btn.textContent.includes('Enter address manually')
-        );
+      const clicked = await page.evaluate(() => {
+        // 查找所有可点击元素
+        const elements = document.querySelectorAll('a, button, span, div');
+        for (const el of elements) {
+          const text = el.textContent || '';
+          if (text.includes('手动输入地址') || text.includes('Enter address manually') || 
+              text.includes('手动输入') || text.includes('manually')) {
+            el.click();
+            return true;
+          }
+        }
+        return false;
       });
       
-      if (manualAddressBtn && manualAddressBtn.asElement && manualAddressBtn.asElement()) {
-        await manualAddressBtn.asElement().click();
-        await sleep(500);
+      if (clicked) {
+        await sleep(1000);
+        logger.progress('已展开手动输入地址');
       }
     } catch (e) {
       // 忽略，可能不需要点击手动输入按钮
@@ -335,12 +369,21 @@ async function fillAndSubmitCard(page, cardInfo, addressInfo, logger) {
       }
     }
     
-    // 3. 填写城市 - 通过 placeholder 查找
+    // 3. 填写城市 - 多种方式尝试
     let cityFilled = false;
-    for (const input of allInputs) {
-      const placeholder = await page.evaluate(el => el.placeholder || '', input);
-      if (placeholder.includes('城市') || placeholder.includes('City')) {
-        await input.click({ clickCount: 3 });
+    
+    // 方式1: 通过 name 属性查找
+    const citySelectors = [
+      'input[name="city"]',
+      'input[name="locality"]',
+      'input[name="addressCity"]',
+      'input[autocomplete="address-level2"]'
+    ];
+    
+    for (const selector of citySelectors) {
+      const cityInput = await page.$(selector);
+      if (cityInput) {
+        await cityInput.click({ clickCount: 3 });
         await sleep(200);
         await page.keyboard.type(addressInfo.city, { delay: 50 });
         await sleep(500);
@@ -349,17 +392,25 @@ async function fillAndSubmitCard(page, cardInfo, addressInfo, logger) {
         break;
       }
     }
+    
+    // 方式2: 通过 placeholder 查找
     if (!cityFilled) {
-      const cityInput = await page.$('input[name="city"], input[name="locality"]');
-      if (cityInput) {
-        await cityInput.click({ clickCount: 3 });
-        await sleep(200);
-        await page.keyboard.type(addressInfo.city, { delay: 50 });
-        await sleep(500);
-        logger.progress(`城市: ${addressInfo.city}`);
-      } else {
-        logger.warning('未找到城市输入框');
+      for (const input of allInputs) {
+        const placeholder = await page.evaluate(el => el.placeholder || '', input);
+        if (placeholder.includes('城市') || placeholder.includes('City')) {
+          await input.click({ clickCount: 3 });
+          await sleep(200);
+          await page.keyboard.type(addressInfo.city, { delay: 50 });
+          await sleep(500);
+          logger.progress(`城市: ${addressInfo.city}`);
+          cityFilled = true;
+          break;
+        }
       }
+    }
+    
+    if (!cityFilled) {
+      logger.warning('未找到城市输入框');
     }
     
     // 4. 填写邮编 - 通过 placeholder 查找

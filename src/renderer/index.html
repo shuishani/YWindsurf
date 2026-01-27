@@ -245,6 +245,7 @@
               </button>
               <div id="filterMenu" style="display:none; position:absolute; top:100%; right:0; margin-top:4px; background:white; border:1px solid #e5e5ea; border-radius:8px; box-shadow:0 4px 12px rgba(0,0,0,0.15); min-width:120px; z-index:1000; overflow:hidden;">
                 <div onclick="filterAccountsByType('all'); hideFilterMenu();" style="padding:8px 12px; cursor:pointer; font-size:12px; border-bottom:1px solid #f5f5f7;">全部</div>
+                <div onclick="filterAccountsByType('unbound'); hideFilterMenu();" style="padding:8px 12px; cursor:pointer; font-size:12px; border-bottom:1px solid #f5f5f7;">未绑卡</div>
                 <div onclick="filterAccountsByType('Enterprise'); hideFilterMenu();" style="padding:8px 12px; cursor:pointer; font-size:12px; border-bottom:1px solid #f5f5f7;">Enterprise</div>
                 <div onclick="filterAccountsByType('Teams'); hideFilterMenu();" style="padding:8px 12px; cursor:pointer; font-size:12px; border-bottom:1px solid #f5f5f7;">Teams</div>
                 <div onclick="filterAccountsByType('Pro'); hideFilterMenu();" style="padding:8px 12px; cursor:pointer; font-size:12px; border-bottom:1px solid #f5f5f7;">Pro</div>
@@ -262,6 +263,11 @@
             <button class="modern-btn btn-secondary" onclick="exportSelectedAccounts()" style="display:inline-flex; align-items:center; gap:4px;">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
               导出
+            </button>
+            <!-- 批量获取绑卡链接 -->
+            <button class="modern-btn btn-secondary" onclick="batchGetPaymentLinks()" style="display:inline-flex; align-items:center; gap:4px;" title="批量获取绑卡链接并复制到剪贴板">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path></svg>
+              获取链接
             </button>
             <div style="width:1px; height:20px; background:#d2d2d7; margin:0 4px;"></div>
             <!-- 刷新按钮 -->
@@ -410,46 +416,102 @@
           <div class="settings-group">
             <h3>邮箱配置</h3>
             
-            <!-- 第一行：域名管理 -->
+            <!-- 邮箱类型选择 -->
             <div class="form-group compact">
-              <label data-i18n="emailDomainList">注册域名管理</label>
-              <div class="domain-input-group">
-                <input type="text" id="newDomain" data-i18n-placeholder="domainInputPlaceholder" placeholder="输入域名，如: example.com">
-                <button class="btn btn-primary" onclick="addDomain()" data-i18n="addDomainBtn">添加</button>
+              <label>注册邮箱类型</label>
+              <div style="display:flex; gap:16px; margin-top:8px;">
+                <label style="display:inline-flex; align-items:center; gap:6px; cursor:pointer; font-size:14px;">
+                  <input type="radio" name="emailType" value="domain" checked onchange="switchEmailType('domain')" style="width:16px; height:16px;"> 域名邮箱（IMAP）
+                </label>
+                <label style="display:inline-flex; align-items:center; gap:6px; cursor:pointer; font-size:14px;">
+                  <input type="radio" name="emailType" value="126" onchange="switchEmailType('126')" style="width:16px; height:16px;"> 126/163 邮箱（POP3）
+                </label>
               </div>
-              <div class="domain-list" id="domainList"></div>
+              <div style="font-size:12px; color:#86868b; margin-top:4px;">选择用于注册 Windsurf 的邮箱类型</div>
             </div>
 
-            <!-- 第二行：服务器配置 -->
-            <div class="form-row compact">
-              <div class="form-group">
-                <label data-i18n="imapServer">IMAP服务器</label>
-                <input type="text" id="imapHost" data-i18n-placeholder="imapHostPlaceholder" placeholder="imap.qq.com">
+            <!-- 域名邮箱配置区域 -->
+            <div id="domainEmailSection">
+              <!-- 第一行：域名管理 -->
+              <div class="form-group compact">
+                <label data-i18n="emailDomainList">注册域名管理</label>
+                <div class="domain-input-group">
+                  <input type="text" id="newDomain" data-i18n-placeholder="domainInputPlaceholder" placeholder="输入域名，如: example.com">
+                  <button class="btn btn-primary" onclick="addDomain()" data-i18n="addDomainBtn">添加</button>
+                </div>
+                <div class="domain-list" id="domainList"></div>
               </div>
-              <div class="form-group">
-                <label data-i18n="port">端口</label>
-                <input type="number" id="imapPort" value="993">
+
+              <!-- 第二行：服务器配置 -->
+              <div class="form-row compact">
+                <div class="form-group">
+                  <label data-i18n="imapServer">IMAP服务器</label>
+                  <input type="text" id="imapHost" data-i18n-placeholder="imapHostPlaceholder" placeholder="imap.qq.com">
+                </div>
+                <div class="form-group">
+                  <label data-i18n="port">端口</label>
+                  <input type="number" id="imapPort" value="993">
+                </div>
+              </div>
+              
+              <!-- 第三行：账号和密码并排 -->
+              <div class="form-row compact">
+                <div class="form-group">
+                  <label data-i18n="emailAccount">邮箱账号</label>
+                  <input type="email" id="imapUser" data-i18n-placeholder="emailPlaceholder" placeholder="your@example.com">
+                </div>
+                <div class="form-group">
+                  <label data-i18n="emailPassword">邮箱密码</label>
+                  <input type="password" id="imapPassword" data-i18n-placeholder="passwordPlaceholder" placeholder="邮箱密码或授权码">
+                </div>
+              </div>
+              
+              <div class="button-group compact">
+                <div class="button-actions">
+                  <button class="btn btn-primary" onclick="testImap()" data-i18n="testConnection">测试连接</button>
+                  <button class="btn btn-success" onclick="saveSettings()" data-i18n="saveConfig">保存配置</button>
+                </div>
+                <div id="settingsStatus" class="status-display"></div>
               </div>
             </div>
-            
-            <!-- 第三行：账号和密码并排 -->
-            <div class="form-row compact">
-              <div class="form-group">
-                <label data-i18n="emailAccount">邮箱账号</label>
-                <input type="email" id="imapUser" data-i18n-placeholder="emailPlaceholder" placeholder="your@example.com">
+
+            <!-- 126/163 邮箱配置区域 -->
+            <div id="email126Section" style="display:none;">
+              <div class="form-group compact">
+                <label>126/163 邮箱账号文件</label>
+                <div style="display:flex; gap:8px;">
+                  <input type="text" id="email126FilePath" placeholder="选择包含邮箱账号的文件" style="flex:1;" readonly>
+                  <button class="btn btn-secondary" onclick="selectEmail126File()">选择文件</button>
+                </div>
+                <div style="font-size:12px; color:#86868b; margin-top:4px;">
+                  文件格式：每行一个账号，格式为 <code>邮箱----授权码</code>，如：<code>test@126.com----abcd1234</code>
+                </div>
               </div>
-              <div class="form-group">
-                <label data-i18n="emailPassword">邮箱密码</label>
-                <input type="password" id="imapPassword" data-i18n-placeholder="passwordPlaceholder" placeholder="邮箱密码或授权码">
+              
+              <div class="form-row compact">
+                <div class="form-group">
+                  <label>邮箱类型</label>
+                  <select id="email126Type" style="width:100%;">
+                    <option value="126">126 邮箱</option>
+                    <option value="163">163 邮箱</option>
+                  </select>
+                </div>
+                <div class="form-group">
+                  <label>可用账号</label>
+                  <div style="display:flex; gap:8px;">
+                    <input type="text" id="email126Count" value="0 个" readonly style="background:#f5f5f7; flex:1;">
+                    <button class="btn btn-outline" onclick="openUsed126File()" title="打开已用邮箱文件">查看已用邮箱</button>
+                  </div>
+                </div>
               </div>
-            </div>
-            
-            <div class="button-group compact">
-              <div class="button-actions">
-                <button class="btn btn-primary" onclick="testImap()" data-i18n="testConnection">测试连接</button>
-                <button class="btn btn-success" onclick="saveSettings()" data-i18n="saveConfig">保存配置</button>
+              
+              <div class="button-group compact">
+                <div class="button-actions">
+                  <button class="btn btn-primary" onclick="testEmail126()">测试连接</button>
+                  <button class="btn btn-success" onclick="saveEmail126Settings()">保存配置</button>
+                </div>
+                <div id="email126Status" class="status-display"></div>
               </div>
-              <div id="settingsStatus" class="status-display"></div>
             </div>
           </div>
 
@@ -468,18 +530,18 @@
 
           <!-- 验证码配置 -->
           <div class="settings-group">
-            <h3>验证码配置</h3>
+            <h3>验证码配置（打码平台）</h3>
             <div class="form-group compact">
-              <label>CapSolver API Key（可选）</label>
+              <label>CaptchaRun API Key</label>
               <div style="display:flex; gap:8px;">
-                <input type="password" id="capsolverApiKey" placeholder="留空则使用浏览器方式获取验证码" style="flex:1;">
-                <button class="btn btn-primary" onclick="saveCapsolverKey()">保存</button>
-                <button class="btn btn-outline" onclick="testCapsolverKey()">测试</button>
+                <input type="password" id="captchaRunApiKey" placeholder="留空则使用浏览器方式获取验证码" style="flex:1;">
+                <button class="btn btn-primary" onclick="saveCaptchaRunKey()">保存</button>
+                <button class="btn btn-outline" onclick="testCaptchaRunKey()">测试</button>
               </div>
               <div style="font-size:12px; color:#86868b; margin-top:4px;">
-                CapSolver 可自动解决验证码，无需打开浏览器。<a href="https://www.capsolver.com/" target="_blank" style="color:#007aff;">注册获取 API Key</a>（新用户有免费额度）
+                CaptchaRun 可自动解决 Turnstile 验证码。获取 API Key: <code style="user-select:all;">https://captcha-run.com/sso?inviter=3e6bf7b1-6690-48c4-b408-5cdd9f4a3fdc</code>
               </div>
-              <div id="capsolverStatus" style="margin-top:4px;"></div>
+              <div id="captchaRunStatus" style="margin-top:4px;"></div>
             </div>
           </div>
 

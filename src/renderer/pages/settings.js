@@ -9,7 +9,13 @@ const { showToast } = require('../utils/utils');
 const DEFAULT_CONFIG = {
   emailDomains: [],
   emailConfig: { host: '', port: 993, user: '', password: '' },
-  referralLink: ''
+  referralLink: '',
+  emailType: 'domain',  // 'domain' 或 '126'
+  email126Config: {
+    filePath: '',
+    mailType: '126',
+    accounts: []
+  }
 };
 
 let currentConfig = { ...DEFAULT_CONFIG };
@@ -18,7 +24,7 @@ let currentConfig = { ...DEFAULT_CONFIG };
 async function loadSettings() {
   try {
     const saved = await ipcRenderer.invoke('get-email-config');
-    if (saved) currentConfig = JSON.parse(saved);
+    if (saved) currentConfig = { ...DEFAULT_CONFIG, ...JSON.parse(saved) };
   } catch (e) {
     // 使用默认配置
   }
@@ -26,9 +32,10 @@ async function loadSettings() {
   renderDomainList();
   loadLanguageSetting();
   loadEmailConfig();
+  loadEmail126Config();
   await loadPathSettings();
   await loadReferralLink();
-  await loadCapsolverKey();
+  await loadCaptchaRunKey();
 }
 
 // 加载语言设置
@@ -278,43 +285,44 @@ async function loadReferralLink() {
   }
 }
 
-// 保存 CapSolver API Key
-async function saveCapsolverKey() {
-  const key = document.getElementById('capsolverApiKey').value.trim();
+
+// 保存 CaptchaRun API Key
+async function saveCaptchaRunKey() {
+  const key = document.getElementById('captchaRunApiKey').value.trim();
   try {
-    await ipcRenderer.invoke('save-capsolver-key', key);
-    showCapsolverStatus('API Key 已保存', 'success');
+    await ipcRenderer.invoke('save-captcharun-key', key);
+    showCaptchaRunStatus('API Key 已保存', 'success');
   } catch (error) {
-    showCapsolverStatus('保存失败: ' + error.message, 'error');
+    showCaptchaRunStatus('保存失败: ' + error.message, 'error');
   }
 }
 
-// 测试 CapSolver API Key
-async function testCapsolverKey() {
-  const key = document.getElementById('capsolverApiKey').value.trim();
+// 测试 CaptchaRun API Key
+async function testCaptchaRunKey() {
+  const key = document.getElementById('captchaRunApiKey').value.trim();
   if (!key) {
-    showCapsolverStatus('请先输入 API Key', 'warning');
+    showCaptchaRunStatus('请先输入 API Key', 'warning');
     return;
   }
   
-  showCapsolverStatus('正在测试...', 'info');
+  showCaptchaRunStatus('正在测试...', 'info');
   try {
-    const result = await ipcRenderer.invoke('test-capsolver-key', key);
+    const result = await ipcRenderer.invoke('test-captcharun-key', key);
     if (result.success) {
-      showCapsolverStatus(`测试成功！余额: $${result.balance.toFixed(4)}`, 'success');
+      showCaptchaRunStatus(`测试成功！余额: ¥${result.balance}`, 'success');
     } else {
-      showCapsolverStatus('测试失败: ' + result.error, 'error');
+      showCaptchaRunStatus('测试失败: ' + result.error, 'error');
     }
   } catch (error) {
-    showCapsolverStatus('测试失败: ' + error.message, 'error');
+    showCaptchaRunStatus('测试失败: ' + error.message, 'error');
   }
 }
 
-// 加载 CapSolver API Key
-async function loadCapsolverKey() {
+// 加载 CaptchaRun API Key
+async function loadCaptchaRunKey() {
   try {
-    const key = await ipcRenderer.invoke('get-capsolver-key');
-    const input = document.getElementById('capsolverApiKey');
+    const key = await ipcRenderer.invoke('get-captcharun-key');
+    const input = document.getElementById('captchaRunApiKey');
     if (input && key) {
       input.value = key;
     }
@@ -323,9 +331,9 @@ async function loadCapsolverKey() {
   }
 }
 
-// 显示 CapSolver 状态
-function showCapsolverStatus(message, type) {
-  const statusDiv = document.getElementById('capsolverStatus');
+// 显示 CaptchaRun 状态
+function showCaptchaRunStatus(message, type) {
+  const statusDiv = document.getElementById('captchaRunStatus');
   if (statusDiv) {
     const colors = { success: '#22c55e', error: '#ef4444', warning: '#f59e0b', info: '#3b82f6' };
     statusDiv.innerHTML = `<span style="color:${colors[type] || '#666'}; font-size:12px;">${message}</span>`;
@@ -334,6 +342,150 @@ function showCapsolverStatus(message, type) {
     }
   }
 }
+
+// ============ 126/163 邮箱配置相关函数 ============
+
+// 切换邮箱类型
+function switchEmailType(type) {
+  currentConfig.emailType = type;
+  
+  const domainSection = document.getElementById('domainEmailSection');
+  const email126Section = document.getElementById('email126Section');
+  
+  if (type === 'domain') {
+    domainSection.style.display = 'block';
+    email126Section.style.display = 'none';
+  } else {
+    domainSection.style.display = 'none';
+    email126Section.style.display = 'block';
+  }
+  
+  // 保存配置
+  saveSettingsQuiet();
+}
+
+// 加载 126 邮箱配置
+async function loadEmail126Config() {
+  const cfg = currentConfig.email126Config || {};
+  
+  // 设置邮箱类型选择
+  const emailTypeRadios = document.querySelectorAll('input[name="emailType"]');
+  emailTypeRadios.forEach(radio => {
+    radio.checked = radio.value === (currentConfig.emailType || 'domain');
+  });
+  
+  // 切换显示区域
+  switchEmailType(currentConfig.emailType || 'domain');
+  
+  // 设置 126 邮箱配置
+  const filePathInput = document.getElementById('email126FilePath');
+  const typeSelect = document.getElementById('email126Type');
+  const countInput = document.getElementById('email126Count');
+  
+  if (filePathInput) filePathInput.value = cfg.filePath || '';
+  if (typeSelect) typeSelect.value = cfg.mailType || '126';
+  
+  // 显示可用账号数量
+  const available = (cfg.accounts || []).length;
+  if (countInput) countInput.value = `${available} 个`;
+}
+
+// 选择 126 邮箱账号文件
+async function selectEmail126File() {
+  try {
+    const result = await ipcRenderer.invoke('select-email126-file');
+    if (result && result.filePath) {
+      currentConfig.email126Config = currentConfig.email126Config || {};
+      currentConfig.email126Config.filePath = result.filePath;
+      currentConfig.email126Config.accounts = result.accounts || [];
+      
+      document.getElementById('email126FilePath').value = result.filePath;
+      document.getElementById('email126Count').value = result.accounts.length;
+      
+      showEmail126Status(`成功加载 ${result.accounts.length} 个账号`, 'success');
+      saveSettingsQuiet();
+    }
+  } catch (error) {
+    showEmail126Status('选择文件失败: ' + error.message, 'error');
+  }
+}
+
+// 测试 126 邮箱连接
+async function testEmail126() {
+  const accounts = currentConfig.email126Config?.accounts || [];
+  if (accounts.length === 0) {
+    showEmail126Status('请先选择邮箱账号文件', 'warning');
+    return;
+  }
+  
+  const mailType = document.getElementById('email126Type').value;
+  showEmail126Status('正在测试连接...', 'info');
+  
+  try {
+    const result = await ipcRenderer.invoke('test-email126', {
+      user: accounts[0].email,
+      password: accounts[0].password,
+      mailType: mailType
+    });
+    
+    if (result.success) {
+      showEmail126Status('连接成功！' + (result.message || ''), 'success');
+    } else {
+      showEmail126Status('连接失败: ' + result.error, 'error');
+    }
+  } catch (error) {
+    showEmail126Status('测试失败: ' + error.message, 'error');
+  }
+}
+
+// 保存 126 邮箱配置
+async function saveEmail126Settings() {
+  const mailType = document.getElementById('email126Type').value;
+  currentConfig.email126Config = currentConfig.email126Config || {};
+  currentConfig.email126Config.mailType = mailType;
+  
+  try {
+    await ipcRenderer.invoke('save-email-config', currentConfig);
+    showEmail126Status('配置已保存', 'success');
+    showToast('126邮箱配置已保存', 'success');
+  } catch (error) {
+    showEmail126Status('保存失败: ' + error.message, 'error');
+  }
+}
+
+// 显示 126 邮箱状态
+function showEmail126Status(message, type) {
+  const statusDiv = document.getElementById('email126Status');
+  if (statusDiv) {
+    const colors = { success: '#22c55e', error: '#ef4444', warning: '#f59e0b', info: '#3b82f6' };
+    statusDiv.innerHTML = `<span style="color:${colors[type] || '#666'}; font-size:12px;">${message}</span>`;
+    if (type !== 'info') {
+      setTimeout(() => { statusDiv.innerHTML = ''; }, 5000);
+    }
+  }
+}
+
+// 打开已用126邮箱文件
+async function openUsed126File() {
+  try {
+    const result = await ipcRenderer.invoke('open-used-126-file');
+    if (!result.success) {
+      showEmail126Status(result.error || '打开失败', 'warning');
+    }
+  } catch (error) {
+    showEmail126Status('打开失败: ' + error.message, 'error');
+  }
+}
+
+// 静默保存配置（不显示提示）
+async function saveSettingsQuiet() {
+  try {
+    await ipcRenderer.invoke('save-email-config', currentConfig);
+  } catch (e) {
+    localStorage.setItem('windsurfConfig', JSON.stringify(currentConfig));
+  }
+}
+
 
 // 导出模块并暴露到全局
 const settingsModule = {
@@ -345,13 +497,19 @@ const settingsModule = {
   changeLanguage,
   loadPathSettings,
   selectDataPath,
+  switchEmailType,
+  loadEmail126Config,
+  selectEmail126File,
+  testEmail126,
+  saveEmail126Settings,
+  openUsed126File,
   resetDataPath,
   showPathStatus,
   saveReferralLink,
   loadReferralLink,
-  saveCapsolverKey,
-  testCapsolverKey,
-  loadCapsolverKey
+  saveCaptchaRunKey,
+  testCaptchaRunKey,
+  loadCaptchaRunKey
 };
 
 Object.assign(window, settingsModule);

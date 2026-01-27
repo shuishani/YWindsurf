@@ -270,9 +270,11 @@ function registerAllIPC(app, mainWindow) {
   ipcMain.handle('batch-register', async (event, config) => {
     const RegistrationBot = require('./services/registration');
     
-    // 获取邀请链接配置
+    // 获取完整设置配置
     const settings = await getSettings();
     config.referralLink = settings.referralLink || '';
+    config.emailType = settings.emailType || 'domain';
+    config.email126Config = settings.email126Config || { accounts: [], mailType: '126' };
     
     const bot = new RegistrationBot(config);
     
@@ -378,7 +380,9 @@ function registerAllIPC(app, mainWindow) {
     return JSON.stringify({
       emailDomains: settings.emailDomains || [],
       emailConfig: settings.emailConfig || { host: '', port: 993, user: '', password: '' },
-      referralLink: settings.referralLink || ''
+      referralLink: settings.referralLink || '',
+      emailType: settings.emailType || 'domain',
+      email126Config: settings.email126Config || { filePath: '', mailType: '126', accounts: [] }
     });
   });
 
@@ -388,9 +392,100 @@ function registerAllIPC(app, mainWindow) {
     const cfg = typeof config === 'string' ? JSON.parse(config) : config;
     if (cfg.emailConfig) settings.emailConfig = cfg.emailConfig;
     if (cfg.emailDomains) settings.emailDomains = cfg.emailDomains;
+    if (cfg.emailType !== undefined) settings.emailType = cfg.emailType;
+    if (cfg.email126Config) settings.email126Config = cfg.email126Config;
     await saveSettings(settings);
     return { success: true };
   });
+
+  // 选择 126 邮箱账号文件
+  ipcMain.handle('select-email126-file', async () => {
+    const result = await dialog.showOpenDialog({
+      title: '选择 126/163 邮箱账号文件',
+      filters: [{ name: '文本文件', extensions: ['txt'] }],
+      properties: ['openFile']
+    });
+    
+    if (result.canceled || !result.filePaths[0]) {
+      return null;
+    }
+    
+    const filePath = result.filePaths[0];
+    try {
+      const content = await fs.readFile(filePath, 'utf-8');
+      const lines = content.split('\n').filter(line => line.trim());
+      const accounts = [];
+      
+      for (const line of lines) {
+        const parts = line.trim().split('----');
+        if (parts.length >= 2) {
+          accounts.push({
+            email: parts[0].trim(),
+            password: parts[1].trim()
+          });
+        }
+      }
+      
+      return { filePath, accounts };
+    } catch (error) {
+      return { error: error.message };
+    }
+  });
+
+  // 测试 126 邮箱连接
+  ipcMain.handle('test-email126', async (event, config) => {
+    try {
+      const Email126Receiver = require('./services/email-126');
+      const receiver = new Email126Receiver(config);
+      return await receiver.testConnection();
+    } catch (error) {
+      return { success: false, error: error.message };
+    }
+  });
+
+  // 单个账号登录绑卡（打开浏览器登录后进入绑卡页面）
+  ipcMain.handle('browser-bind-single', async (event, { email, password }) => {
+    try {
+      const { getPaymentLinkWithBrowser } = require('./services/turnstile-handler');
+      const { createTaggedLogger } = require('./utils/logger');
+      const logger = createTaggedLogger('登录绑卡');
+      
+      logger.info('打开浏览器登录', email);
+      
+      const result = await getPaymentLinkWithBrowser(email, password);
+      
+      if (result.success) {
+        logger.success('绑卡页面已打开', email);
+        return { success: true };
+      } else {
+        logger.error('登录失败', result.error);
+        return { success: false, error: result.error };
+      }
+    } catch (error) {
+      return { success: false, error: error.message };
+    }
+  });
+
+  // 打开已用126邮箱文件
+  ipcMain.handle('open-used-126-file', async () => {
+    try {
+      const usedFile = path.join(windsurfPaths.getJsonDataDir(), 'used-126-emails.txt');
+      
+      // 如果文件不存在，创建空文件
+      try {
+        await fs.access(usedFile);
+      } catch {
+        await fs.writeFile(usedFile, '', 'utf-8');
+      }
+      
+      // 用系统默认程序打开文件
+      shell.openPath(usedFile);
+      return { success: true };
+    } catch (error) {
+      return { success: false, error: error.message };
+    }
+  });
+
 
   // 邀请链接
   ipcMain.handle('get-referral-link', async () => (await getSettings()).referralLink || '');

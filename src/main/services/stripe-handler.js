@@ -294,10 +294,30 @@ function initStripeHandlers(win) {
   mainWindow = win;
   
   // 获取支付链接（仅获取链接，不打开浏览器）
-  // 如果需要验证码，返回 needsCaptcha 标志
+  // 如果需要验证码，自动调用打码 API 获取 token
   ipcMain.handle('get-payment-link', async (event, { email, password }) => {
     const { getPaymentLink } = require('./stripe-api');
-    return await getPaymentLink(email, password);
+    const { getTurnstileToken } = require('./turnstile-handler');
+    
+    // 第一次尝试（无验证码）
+    let result = await getPaymentLink(email, password);
+    
+    // 如果需要验证码，尝试使用打码 API
+    if (result.needsCaptcha) {
+      bindLogger.info('需要验证码，尝试使用打码 API...');
+      const tokenResult = await getTurnstileToken();
+      
+      if (tokenResult.success && tokenResult.token) {
+        bindLogger.success('验证码获取成功，重新请求...');
+        result = await getPaymentLink(email, password, tokenResult.token);
+      } else {
+        bindLogger.warning('打码 API 失败', tokenResult.error || '未配置打码平台');
+        // 返回原始错误，提示用户配置打码平台或使用浏览器方式
+        return { success: false, error: '需要验证码，请在设置中配置 CaptchaRun API Key，或使用浏览器方式绑卡' };
+      }
+    }
+    
+    return result;
   });
   
   // API 绑卡：获取链接 + 打开浏览器 + 自动填写表单
@@ -395,7 +415,8 @@ function initStripeHandlers(win) {
   });
   
   // 内部绑卡函数（供批量绑卡和单个绑卡复用）
-  async function ipcRenderer_batchApiBindCards(accounts, selectedCardId, concurrent) {
+  // useBrowser: true 使用浏览器登录方式，false 使用API获取链接方式
+  async function ipcRenderer_batchApiBindCards(accounts, selectedCardId, concurrent, useBrowser = false) {
     const settings = await getSettings();
     const CONCURRENT_COUNT = concurrent || settings.concurrent || 5;
     let successCount = 0;
@@ -430,22 +451,55 @@ function initStripeHandlers(win) {
         
         const cardInfo = generateCardInfo(cardData);
         
-        // 直接使用浏览器登录并进入绑卡页面（跳过API获取链接）
-        console.log('[DEBUG] 开始浏览器登录流程');
-        taskLogger.progress('使用浏览器登录...');
-        const { getPaymentLinkWithBrowser } = require('./turnstile-handler');
-        const browserResult = await getPaymentLinkWithBrowser(acc.email, acc.password);
+        let browser, page;
         
-        if (!browserResult.success) {
-          taskLogger.error('登录失败', browserResult.error);
-          await updateAccountBindStatus(acc.email, false);
-          return { success: false, error: browserResult.error };
+        if (useBrowser) {
+          // 浏览器登录方式
+          taskLogger.progress('使用浏览器登录...');
+          const { getPaymentLinkWithBrowser } = require('./turnstile-handler');
+          const browserResult = await getPaymentLinkWithBrowser(acc.email, acc.password);
+          
+          if (!browserResult.success) {
+            taskLogger.error('登录失败', browserResult.error);
+            await updateAccountBindStatus(acc.email, false);
+            return { success: false, error: browserResult.error };
+          }
+          
+          taskLogger.success('已到达 Stripe 页面');
+          browser = browserResult.browser;
+          page = browserResult.page;
+        } else {
+          // API获取链接方式
+          taskLogger.progress('获取绑卡链接...');
+          const { getPaymentLink } = require('./stripe-api');
+          const linkResult = await getPaymentLink(acc.email, acc.password);
+          
+          if (!linkResult.success || !linkResult.paymentLink) {
+            taskLogger.error('获取链接失败', linkResult.error || '未知错误');
+            await updateAccountBindStatus(acc.email, false);
+            return { success: false, error: linkResult.error || '获取链接失败' };
+          }
+          
+          taskLogger.success('获取链接成功');
+          taskLogger.progress('打开绑卡页面...');
+          
+          // 打开浏览器访问链接
+          const { connect } = require('puppeteer-real-browser');
+          const response = await connect({
+            headless: false,
+            fingerprint: true,
+            turnstile: false,
+            tf: false,
+            args: ['--disable-blink-features=AutomationControlled']
+          });
+          
+          browser = response.browser;
+          page = response.page;
+          await page.setViewport({ width: 780, height: 850 });
+          await page.goto(linkResult.paymentLink, { waitUntil: 'networkidle2', timeout: 60000 });
+          
+          taskLogger.success('已打开 Stripe 页面');
         }
-        
-        taskLogger.success('已到达 Stripe 页面');
-        
-        const browser = browserResult.browser;
-        const page = browserResult.page;
         
         await new Promise(resolve => setTimeout(resolve, 2000));
         
@@ -519,8 +573,9 @@ function initStripeHandlers(win) {
   }
   
   // 批量 API 绑卡（支持并行）- 复用内部函数
-  ipcMain.handle('batch-api-bind-cards', async (event, { accounts, selectedCardId, concurrent }) => {
-    return await ipcRenderer_batchApiBindCards(accounts, selectedCardId, concurrent);
+  // useBrowser: true 表示使用浏览器登录方式获取链接，false 使用API获取链接
+  ipcMain.handle('batch-api-bind-cards', async (event, { accounts, selectedCardId, concurrent, useBrowser }) => {
+    return await ipcRenderer_batchApiBindCards(accounts, selectedCardId, concurrent, useBrowser || false);
   });
 
   // 用户确认绑卡成功

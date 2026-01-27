@@ -1,7 +1,7 @@
 /**
  * Cloudflare Turnstile 验证处理器
  * 支持多种方式获取 token：
- * 1. CapSolver API（推荐，需要 API Key）
+ * 1. CaptchaRun API（推荐，需要 API Key）
  * 2. puppeteer-real-browser 自动处理（备用）
  */
 
@@ -30,58 +30,69 @@ const SITEKEY = '0x4AAAAAAA447Bur1xJStKg5';
 const WEBSITE_URL = 'https://windsurf.com/plan';
 
 /**
- * 使用 CapSolver API 获取 Turnstile token
- * @param {string} apiKey - CapSolver API Key
+ * 使用 CaptchaRun API 获取 Turnstile token
+ * API 文档: https://docs.captcha.run/guide/rz7to05q/
+ * @param {string} apiKey - CaptchaRun API Key
  * @returns {Promise<{success: boolean, token?: string, error?: string}>}
  */
-async function solveTurnstileWithCapSolver(apiKey) {
+async function solveTurnstileWithCaptchaRun(apiKey) {
   try {
-    logger.info('使用 CapSolver 解决验证码...');
+    logger.info('使用 CaptchaRun 解决验证码...');
     
     // 1. 创建任务
-    const createTaskResponse = await axios.post('https://api.capsolver.com/createTask', {
-      clientKey: apiKey,
-      task: {
-        type: 'AntiTurnstileTaskProxyLess',
-        websiteURL: WEBSITE_URL,
-        websiteKey: SITEKEY
-      }
-    }, { timeout: 30000 });
+    const createTaskResponse = await axios.post('https://api.captcha.run/v2/tasks', {
+      captchaType: 'Turnstile',
+      siteKey: SITEKEY,
+      siteReferer: WEBSITE_URL
+    }, {
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${apiKey}`
+      },
+      timeout: 30000
+    });
     
-    if (createTaskResponse.data.errorId !== 0) {
-      return { success: false, error: createTaskResponse.data.errorDescription || '创建任务失败' };
+    if (!createTaskResponse.data.taskId) {
+      return { success: false, error: createTaskResponse.data.message || '创建任务失败' };
     }
     
     const taskId = createTaskResponse.data.taskId;
-    logger.info('任务已创建，等待结果...');
+    logger.info(`任务已创建: ${taskId}，等待结果...`);
     
-    // 2. 轮询获取结果（最多等待 60 秒）
-    for (let i = 0; i < 30; i++) {
+    // 2. 轮询获取结果（最多等待 120 秒）
+    for (let i = 0; i < 60; i++) {
       await new Promise(resolve => setTimeout(resolve, 2000));
       
-      const resultResponse = await axios.post('https://api.capsolver.com/getTaskResult', {
-        clientKey: apiKey,
-        taskId: taskId
-      }, { timeout: 10000 });
+      const resultResponse = await axios.get(`https://api.captcha.run/v2/tasks/${taskId}`, {
+        headers: {
+          'Authorization': `Bearer ${apiKey}`
+        },
+        timeout: 10000
+      });
       
-      if (resultResponse.data.status === 'ready') {
-        const token = resultResponse.data.solution?.token;
-        if (token) {
-          logger.success('CapSolver 验证成功');
-          return { success: true, token };
-        }
-      } else if (resultResponse.data.errorId !== 0) {
-        return { success: false, error: resultResponse.data.errorDescription || '获取结果失败' };
+      const data = resultResponse.data;
+      
+      if (data.status === 'Success' && data.response?.token) {
+        logger.success('CaptchaRun 验证成功');
+        return { success: true, token: data.response.token };
+      } else if (data.status === 'Failed' || data.status === 'Error') {
+        return { success: false, error: data.message || '验证失败' };
+      }
+      
+      // 每10秒输出一次等待日志
+      if (i > 0 && i % 5 === 0) {
+        logger.info(`等待验证结果... (${i * 2}秒)`);
       }
     }
     
     return { success: false, error: '验证超时' };
     
   } catch (error) {
-    logger.error('CapSolver 请求失败', error.message);
+    logger.error('CaptchaRun 请求失败', error.message);
     return { success: false, error: error.message };
   }
 }
+
 
 /**
  * 登录账号后打开 pricing 页面，完成验证后直接在 Stripe 页面绑卡
@@ -291,25 +302,24 @@ async function solveTurnstileWithBrowser() {
 
 /**
  * 获取 Turnstile token（自动选择最佳方式）
- * 优先使用免费的浏览器方式，如果配置了 CapSolver 则使用 CapSolver
+ * 优先级：CaptchaRun > CapSolver > 浏览器方式
  * @returns {Promise<{success: boolean, token?: string, error?: string}>}
  */
 async function getTurnstileToken() {
   try {
-    // 检查是否配置了 CapSolver API Key（付费方案）
     const settings = await getSettings();
-    const capsolverKey = settings.capsolverApiKey;
     
-    if (capsolverKey) {
-      logger.info('使用 CapSolver 解决验证码...');
-      const result = await solveTurnstileWithCapSolver(capsolverKey);
+    // 1. 优先使用 CaptchaRun API Key
+    const captchaRunKey = settings.captchaRunApiKey;
+    if (captchaRunKey) {
+      const result = await solveTurnstileWithCaptchaRun(captchaRunKey);
       if (result.success) {
         return result;
       }
-      logger.warning('CapSolver 失败，尝试浏览器方式...');
+      logger.warning('CaptchaRun 失败，尝试其他方式...');
     }
     
-    // 默认使用免费的浏览器方式
+    // 2. 默认使用免费的浏览器方式
     return await solveTurnstileWithBrowser();
     
   } catch (error) {
@@ -341,31 +351,37 @@ function initTurnstileHandlers(mainWindow) {
     return await showTurnstileWindow(mainWindow);
   });
   
-  // 保存 CapSolver API Key
-  ipcMain.handle('save-capsolver-key', async (event, key) => {
-    await saveSettings({ capsolverApiKey: key });
+  // 保存 CaptchaRun API Key
+  ipcMain.handle('save-captcharun-key', async (event, key) => {
+    await saveSettings({ captchaRunApiKey: key });
     return { success: true };
   });
   
-  // 获取 CapSolver API Key
-  ipcMain.handle('get-capsolver-key', async () => {
+  // 获取 CaptchaRun API Key
+  ipcMain.handle('get-captcharun-key', async () => {
     const settings = await getSettings();
-    return settings.capsolverApiKey || '';
+    return settings.captchaRunApiKey || '';
   });
   
-  // 测试 CapSolver API Key
-  ipcMain.handle('test-capsolver-key', async (event, key) => {
+  // 测试 CaptchaRun API Key（查询余额）
+  ipcMain.handle('test-captcharun-key', async (event, key) => {
     try {
-      const response = await axios.post('https://api.capsolver.com/getBalance', {
-        clientKey: key
-      }, { timeout: 10000 });
+      const response = await axios.get('https://api.captcha.run/v2/users/self/wallet', {
+        headers: {
+          'Authorization': `Bearer ${key}`
+        },
+        timeout: 10000
+      });
       
-      if (response.data.errorId === 0) {
+      if (response.data && response.data.balance !== undefined) {
         return { success: true, balance: response.data.balance };
       } else {
-        return { success: false, error: response.data.errorDescription || 'API Key 无效' };
+        return { success: false, error: 'API Key 无效' };
       }
     } catch (error) {
+      if (error.response?.status === 401) {
+        return { success: false, error: 'API Key 无效或已过期' };
+      }
       return { success: false, error: error.message };
     }
   });
