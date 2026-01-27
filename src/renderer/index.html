@@ -509,7 +509,9 @@
                   <label>可用账号</label>
                   <div style="display:flex; gap:8px;">
                     <input type="text" id="email126Count" value="0 个" readonly style="background:#f5f5f7; flex:1;">
-                    <button class="btn btn-outline" onclick="openUsed126File()" title="打开已用邮箱文件">查看已用邮箱</button>
+                    <button class="btn btn-outline" onclick="openUsed126File()" title="打开已用邮箱文件">已用</button>
+                    <button class="btn btn-outline" onclick="openFailed126File()" title="打开失败邮箱文件">失败</button>
+                    <button class="btn btn-primary" onclick="reloadFailed126Emails()" title="将失败邮箱重新加载到可用列表">重试失败</button>
                   </div>
                 </div>
               </div>

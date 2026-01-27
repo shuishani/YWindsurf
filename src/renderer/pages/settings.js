@@ -477,6 +477,35 @@ async function openUsed126File() {
   }
 }
 
+// 打开失败126邮箱文件
+async function openFailed126File() {
+  try {
+    const result = await ipcRenderer.invoke('open-failed-126-file');
+    if (!result.success) {
+      showEmail126Status(result.error || '打开失败', 'warning');
+    }
+  } catch (error) {
+    showEmail126Status('打开失败: ' + error.message, 'error');
+  }
+}
+
+// 重新加载失败的126邮箱到可用列表
+async function reloadFailed126Emails() {
+  try {
+    showEmail126Status('正在重新加载...', 'info');
+    const result = await ipcRenderer.invoke('reload-failed-126-emails');
+    if (result.success) {
+      showEmail126Status(result.message, result.count > 0 ? 'success' : 'info');
+      // 刷新显示
+      await loadEmail126Config();
+    } else {
+      showEmail126Status(result.error || '重新加载失败', 'error');
+    }
+  } catch (error) {
+    showEmail126Status('重新加载失败: ' + error.message, 'error');
+  }
+}
+
 // 静默保存配置（不显示提示）
 async function saveSettingsQuiet() {
   try {
@@ -503,6 +532,8 @@ const settingsModule = {
   testEmail126,
   saveEmail126Settings,
   openUsed126File,
+  openFailed126File,
+  reloadFailed126Emails,
   resetDataPath,
   showPathStatus,
   saveReferralLink,

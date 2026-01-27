@@ -487,6 +487,97 @@ function registerAllIPC(app, mainWindow) {
     }
   });
 
+  // 打开失败126邮箱文件
+  ipcMain.handle('open-failed-126-file', async () => {
+    try {
+      const failedFile = path.join(windsurfPaths.getJsonDataDir(), 'failed-126-emails.txt');
+      
+      // 如果文件不存在，创建空文件
+      try {
+        await fs.access(failedFile);
+      } catch {
+        await fs.writeFile(failedFile, '', 'utf-8');
+      }
+      
+      shell.openPath(failedFile);
+      return { success: true };
+    } catch (error) {
+      return { success: false, error: error.message };
+    }
+  });
+
+  // 重新加载失败的126邮箱到可用列表
+  ipcMain.handle('reload-failed-126-emails', async () => {
+    try {
+      const failedFile = path.join(windsurfPaths.getJsonDataDir(), 'failed-126-emails.txt');
+      
+      // 读取失败邮箱文件
+      let failedContent = '';
+      try {
+        failedContent = await fs.readFile(failedFile, 'utf-8');
+      } catch {
+        return { success: true, count: 0, message: '没有失败的邮箱' };
+      }
+      
+      if (!failedContent.trim()) {
+        return { success: true, count: 0, message: '没有失败的邮箱' };
+      }
+      
+      // 解析失败邮箱（格式：邮箱----授权码----失败原因----时间）
+      const lines = failedContent.trim().split('\n').filter(line => line.trim());
+      const emailsToReload = [];
+      
+      for (const line of lines) {
+        const parts = line.split('----');
+        if (parts.length >= 2) {
+          emailsToReload.push({
+            email: parts[0].trim(),
+            password: parts[1].trim()
+          });
+        }
+      }
+      
+      if (emailsToReload.length === 0) {
+        return { success: true, count: 0, message: '没有可重新加载的邮箱' };
+      }
+      
+      // 读取当前设置
+      const settings = await getSettings();
+      if (!settings.email126Config) {
+        settings.email126Config = { accounts: [], mailType: '126' };
+      }
+      
+      // 去重添加到可用列表
+      let addedCount = 0;
+      for (const acc of emailsToReload) {
+        const exists = settings.email126Config.accounts.some(a => a.email === acc.email);
+        if (!exists) {
+          settings.email126Config.accounts.push(acc);
+          addedCount++;
+        }
+      }
+      
+      // 保存设置
+      await saveSettings(settings);
+      
+      // 清空失败文件
+      await fs.writeFile(failedFile, '', 'utf-8');
+      
+      // 清空临时跳过列表（让这些邮箱可以被重新使用）
+      const RegistrationBot = require('./services/registration');
+      if (RegistrationBot._tempSkippedEmails) {
+        RegistrationBot._tempSkippedEmails.clear();
+      }
+      
+      return { 
+        success: true, 
+        count: addedCount, 
+        message: `已重新加载 ${addedCount} 个邮箱` 
+      };
+    } catch (error) {
+      return { success: false, error: error.message };
+    }
+  });
 
   // 邀请链接
   ipcMain.handle('get-referral-link', async () => (await getSettings()).referralLink || '');
