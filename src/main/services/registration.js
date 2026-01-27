@@ -107,8 +107,26 @@ class RegistrationBot {
    */
   static resetAllocatedIndexes() {
     RegistrationBot._allocated126Indexes = new Set();
+    RegistrationBot._markedEmails = new Set();
     // 注意：不重置 _tempSkippedEmails，因为失败的邮箱应该在整个会话期间跳过
     // 只有用户点击"重试失败"按钮后才会清空
+  }
+  
+  /**
+   * 临时跳过邮箱（本次批量注册期间不再使用）
+   */
+  tempSkipEmail(email) {
+    if (!RegistrationBot._tempSkippedEmails) {
+      RegistrationBot._tempSkippedEmails = new Set();
+    }
+    RegistrationBot._tempSkippedEmails.add(email);
+  }
+  
+  /**
+   * 检查邮箱是否被临时跳过
+   */
+  isEmailTempSkipped(email) {
+    return RegistrationBot._tempSkippedEmails && RegistrationBot._tempSkippedEmails.has(email);
   }
   
   /**
@@ -170,12 +188,17 @@ class RegistrationBot {
   }
 
   /**
-   * 标记126邮箱失败（记录到失败文件，本次跳过）
+   * 标记126邮箱失败（从可用列表移除，记录到失败文件）
    */
   async mark126EmailFailed(email, reason = '未知错误') {
     if (this.emailType !== '126' || !email) return;
     
     this.tempSkipEmail(email);
+    
+    // 防止重复标记
+    if (!RegistrationBot._markedEmails) RegistrationBot._markedEmails = new Set();
+    if (RegistrationBot._markedEmails.has(email)) return;
+    RegistrationBot._markedEmails.add(email);
     
     return this._execute126Operation(async () => {
       try {
@@ -187,9 +210,16 @@ class RegistrationBot {
         
         const account = settings.email126Config?.accounts?.find(acc => acc.email === email);
         if (account) {
+          // 从可用列表移除
+          settings.email126Config.accounts = settings.email126Config.accounts.filter(acc => acc.email !== email);
+          
+          // 记录到失败文件
           const timestamp = new Date().toISOString().slice(0, 19).replace('T', ' ');
           await fs.appendFile(paths.failed, `${account.email}----${account.password}----${reason}----${timestamp}\n`, 'utf-8');
-          this.logger.warning('126邮箱已记录失败', `${email} (${reason})`);
+          
+          // 保存设置
+          await fs.writeFile(paths.settings, JSON.stringify(settings, null, 2));
+          this.logger.warning('126邮箱已移除', `${email} (${reason}) 剩余 ${settings.email126Config.accounts.length} 个`);
         }
       } catch (e) {
         this.logger.warning('记录失败邮箱失败', e.message);
