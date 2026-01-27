@@ -55,66 +55,134 @@ class RegistrationBot {
 
   /**
    * 获取下一个 126/163 邮箱账号
-   * 直接从账号列表取第一个，注册成功后会从列表中移除
+   * 使用索引避免重复分配，注册成功后会从列表中移除
    */
   getNext126Email() {
     const accounts = this.email126Config.accounts || [];
-    if (accounts.length === 0) {
-      throw new Error('没有可用的 126/163 邮箱账号，请在设置中配置或重新加载文件');
+    
+    // 初始化已分配索引
+    if (!this._allocated126Indexes) {
+      this._allocated126Indexes = new Set();
     }
     
-    // 取第一个账号
-    const account = accounts[0];
+    // 找到第一个未分配的账号
+    let account = null;
+    for (let i = 0; i < accounts.length; i++) {
+      if (!this._allocated126Indexes.has(i)) {
+        this._allocated126Indexes.add(i);
+        account = accounts[i];
+        break;
+      }
+    }
+    
+    if (!account) {
+      throw new Error('没有可用的 126/163 邮箱账号，请在设置中配置或重新加载文件');
+    }
     
     // 保存当前使用的账号信息，供后续获取验证码使用
     this.current126Account = account;
     
-    this.logger.info('使用126邮箱', `${account.email} (剩余 ${accounts.length - 1} 个)`);
+    this.logger.info('使用126邮箱', `${account.email} (剩余 ${accounts.length - this._allocated126Indexes.size} 个)`);
     return account.email;
   }
   
   /**
+   * 获取可用的126邮箱数量
+   */
+  getAvailable126Count() {
+    const accounts = this.email126Config.accounts || [];
+    const allocated = this._allocated126Indexes ? this._allocated126Indexes.size : 0;
+    return accounts.length - allocated;
+  }
+  
+  /**
    * 标记 126 邮箱注册成功，从待用列表移除，保存到已用文件
+   * 使用队列避免并发写入冲突
    */
   async mark126EmailUsed(email) {
     if (this.emailType !== '126') return;
     
-    try {
-      const fs = require('fs').promises;
-      const path = require('path');
-      const windsurfPaths = require('../../shared/config/windsurf-paths');
-      const dataDir = windsurfPaths.getJsonDataDir();
-      const SETTINGS_FILE = path.join(dataDir, 'settings.json');
-      const USED_126_FILE = path.join(dataDir, 'used-126-emails.txt');
-      
-      // 读取设置
-      let settings = {};
-      try {
-        const data = await fs.readFile(SETTINGS_FILE, 'utf-8');
-        settings = JSON.parse(data);
-      } catch (e) {}
-      
-      // 从账号列表中移除
-      if (settings.email126Config && settings.email126Config.accounts) {
-        const account = settings.email126Config.accounts.find(acc => acc.email === email);
-        settings.email126Config.accounts = settings.email126Config.accounts.filter(
-          acc => acc.email !== email
-        );
-        // 同时更新内存中的列表
-        this.email126Config.accounts = settings.email126Config.accounts;
-        
-        // 追加到已用邮箱文件（格式：邮箱----授权码）
-        if (account) {
-          const line = `${account.email}----${account.password}\n`;
-          await fs.appendFile(USED_126_FILE, line, 'utf-8');
-        }
-      }
-      
-      await fs.writeFile(SETTINGS_FILE, JSON.stringify(settings, null, 2));
-      this.logger.info('126邮箱已使用', `${email} (剩余 ${settings.email126Config?.accounts?.length || 0} 个)`);
-    } catch (e) {
-      this.logger.warning('标记126邮箱失败', e.message);
+    // 使用锁避免并发写入冲突
+    if (!this._mark126Lock) {
+      this._mark126Lock = Promise.resolve();
     }
+    
+    this._mark126Lock = this._mark126Lock.then(async () => {
+      try {
+        const fs = require('fs').promises;
+        const path = require('path');
+        const windsurfPaths = require('../../shared/config/windsurf-paths');
+        const dataDir = windsurfPaths.getJsonDataDir();
+        const SETTINGS_FILE = path.join(dataDir, 'settings.json');
+        const USED_126_FILE = path.join(dataDir, 'used-126-emails.txt');
+        
+        // 读取设置
+        let settings = {};
+        try {
+          const data = await fs.readFile(SETTINGS_FILE, 'utf-8');
+          settings = JSON.parse(data);
+        } catch (e) {}
+        
+        // 从账号列表中移除
+        if (settings.email126Config && settings.email126Config.accounts) {
+          const account = settings.email126Config.accounts.find(acc => acc.email === email);
+          settings.email126Config.accounts = settings.email126Config.accounts.filter(
+            acc => acc.email !== email
+          );
+          // 同时更新内存中的列表
+          this.email126Config.accounts = settings.email126Config.accounts;
+          
+          // 追加到已用邮箱文件（格式：邮箱----授权码）
+          if (account) {
+            const line = `${account.email}----${account.password}\n`;
+            await fs.appendFile(USED_126_FILE, line, 'utf-8');
+          }
+        }
+        
+        await fs.writeFile(SETTINGS_FILE, JSON.stringify(settings, null, 2));
+        this.logger.info('126邮箱已使用', `${email} (剩余 ${settings.email126Config?.accounts?.length || 0} 个)`);
+      } catch (e) {
+        this.logger.warning('标记126邮箱失败', e.message);
+      }
+    });
+    
+    return this._mark126Lock;
+  }
+
+  /**
+   * 根据设置生成密码
+   * @param {string} email - 邮箱地址
+   * @returns {string} 密码
+   */
+  generatePassword(email) {
+    // 默认使用邮箱作为密码
+    if (this.config.passwordStrength !== 'strong') {
+      return email;
+    }
+    
+    // 强密码：12位，包含大小写字母、数字、特殊字符
+    const upper = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+    const lower = 'abcdefghijklmnopqrstuvwxyz';
+    const digits = '0123456789';
+    const special = '!@#$%&*';
+    const all = upper + lower + digits + special;
+    
+    // 确保至少包含每种字符
+    let password = '';
+    password += upper[Math.floor(Math.random() * upper.length)];
+    password += lower[Math.floor(Math.random() * lower.length)];
+    password += digits[Math.floor(Math.random() * digits.length)];
+    password += special[Math.floor(Math.random() * special.length)];
+    
+    // 填充到12位
+    for (let i = 4; i < 12; i++) {
+      password += all[Math.floor(Math.random() * all.length)];
+    }
+    
+    // 打乱顺序
+    password = password.split('').sort(() => Math.random() - 0.5).join('');
+    
+    return password;
   }
 
   /**
@@ -223,6 +291,10 @@ class RegistrationBot {
           errorMsg = 'QQ邮箱登录失败 (账号异常/密码错误/频率限制)';
         } else if (errorMsg.includes('IMAP连接失败')) {
           errorMsg = 'IMAP连接失败';
+        } else if (errorMsg.includes('Unable to log on') || errorMsg.includes('邮箱登录失败')) {
+          errorMsg = '126邮箱登录失败 (授权码无效或已过期)';
+          // 登录失败直接抛出，不再重试
+          throw new Error(errorMsg);
         } else if (errorMsg.length > 50) {
           errorMsg = errorMsg.substring(0, 50) + '...';
         }
@@ -320,7 +392,7 @@ class RegistrationBot {
       // 生成用户信息
       const email = await this.generateTempEmail();
       const { firstName, lastName } = this.generateRandomName();
-      const password = email; // 邮箱就是密码
+      const password = this.generatePassword(email); // 根据设置生成密码
 
       this.logger.start('启动浏览器');
       
@@ -524,6 +596,15 @@ class RegistrationBot {
       
       await this.sleep(3000);
       
+      // 检测是否出现错误（邮箱可能已被注册）
+      const errorText = await page.evaluate(() => {
+        const errorEl = document.querySelector('.text-red-500, .error, [class*="error"]');
+        return errorEl ? errorEl.textContent : null;
+      });
+      if (errorText && errorText.includes('error occurred')) {
+        throw new Error('邮箱可能已被注册: ' + errorText.substring(0, 50));
+      }
+      
       // ========== 第四步: 邮箱验证码 ==========
       this.logger.step(4, '等待邮箱验证码');
       await page.waitForSelector('input[type="text"], input[name="code"]', { timeout: 60000 });
@@ -681,13 +762,26 @@ class RegistrationBot {
 
     } catch (error) {
       this.logger.error('注册失败', error.message);
+      
+      // 只有在邮箱已被注册的情况下才移除126邮箱
+      if (this.emailType === '126' && email) {
+        const errorMsg = error.message.toLowerCase();
+        // 只有明确是邮箱已被注册的错误才移除
+        if (errorMsg.includes('已被注册') || errorMsg.includes('already registered') || 
+            errorMsg.includes('already exists') || errorMsg.includes('邮箱可能已被注册')) {
+          await this.mark126EmailUsed(email);
+          this.logger.warning('126邮箱已移除', '邮箱已被注册');
+        }
+      }
+      
       // 注册失败时关闭浏览器
       if (browser) {
         try { await browser.close(); } catch (e) {}
       }
       return {
         success: false,
-        error: error.message
+        error: error.message,
+        email // 返回邮箱信息
       };
     }
   }
@@ -699,14 +793,28 @@ class RegistrationBot {
   async batchRegister(count, progressCallback, logCallback, maxConcurrent = 5) {
     const MAX_CONCURRENT = maxConcurrent; // 使用传入的并发数
     
+    // 如果使用126邮箱，限制注册数量不超过可用邮箱数量
+    let actualCount = count;
+    if (this.emailType === '126') {
+      const availableCount = (this.email126Config.accounts || []).length;
+      if (count > availableCount) {
+        this.logger.warning('注册数量调整', `请求 ${count} 个，但只有 ${availableCount} 个可用126邮箱`);
+        actualCount = availableCount;
+        if (actualCount === 0) {
+          this.logger.error('无法注册', '没有可用的126邮箱');
+          return { results: [], successCount: 0, failCount: 0 };
+        }
+      }
+    }
+    
     const results = [];
     let completed = 0;
     let failed = 0;
     
     // 分批处理
-    for (let i = 0; i < count; i += MAX_CONCURRENT) {
+    for (let i = 0; i < actualCount; i += MAX_CONCURRENT) {
       const batch = [];
-      const batchSize = Math.min(MAX_CONCURRENT, count - i);
+      const batchSize = Math.min(MAX_CONCURRENT, actualCount - i);
       
       // 创建当前批次的任务
       for (let j = 0; j < batchSize; j++) {

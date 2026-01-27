@@ -275,6 +275,7 @@ function registerAllIPC(app, mainWindow) {
     config.referralLink = settings.referralLink || '';
     config.emailType = settings.emailType || 'domain';
     config.email126Config = settings.email126Config || { accounts: [], mailType: '126' };
+    config.passwordStrength = settings.passwordStrength || 'same';
     
     const bot = new RegistrationBot(config);
     

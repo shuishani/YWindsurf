@@ -31,23 +31,33 @@ class Email126Receiver {
     
     const startTime = Date.now();
     const checkInterval = 5000; // 每5秒检查一次
+    let consecutiveFailures = 0;
+    let lastError = '';
     
     while (Date.now() - startTime < maxWaitTime) {
       try {
         const code = await this.checkMailForCode(server, targetEmail);
+        consecutiveFailures = 0; // 重置失败计数
         if (code) {
           this.logger.success('验证码获取成功', code);
           return code;
         }
       } catch (error) {
+        consecutiveFailures++;
+        lastError = error.message;
         this.logger.warning('检查邮件失败', error.message);
+        
+        // 如果是登录失败，连续3次后直接报错
+        if (error.message.includes('Unable to log on') && consecutiveFailures >= 3) {
+          throw new Error(`邮箱登录失败（授权码可能无效）: ${error.message}`);
+        }
       }
       
       // 等待后重试
       await this.sleep(checkInterval);
     }
     
-    throw new Error('获取验证码超时');
+    throw new Error(`获取验证码超时${lastError ? ': ' + lastError : ''}`);
   }
 
   /**
@@ -69,6 +79,8 @@ class Email126Receiver {
       // 连接并获取邮件列表
       const list = await pop3.UIDL();
       
+      this.logger.info('邮件列表', `共 ${list ? list.length : 0} 封邮件`);
+      
       if (!list || list.length === 0) {
         await pop3.QUIT();
         return null;
@@ -80,6 +92,11 @@ class Email126Receiver {
       for (const mail of recentMails.reverse()) {
         const mailId = mail[0];
         const content = await pop3.RETR(mailId);
+        
+        // 检查邮件主题
+        const subjectMatch = content.match(/Subject:\s*(.+)/i);
+        const subject = subjectMatch ? subjectMatch[1].substring(0, 50) : '无主题';
+        this.logger.info('检查邮件', subject);
         
         // 解析邮件内容
         const code = this.extractCodeFromMail(content, targetEmail);

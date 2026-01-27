@@ -24,6 +24,10 @@ async function initBatchConfig() {
       if (incognitoModeCheckbox) {
         incognitoModeCheckbox.checked = settings.incognitoMode !== false;
       }
+      const passwordStrengthSelect = document.getElementById('passwordStrength');
+      if (passwordStrengthSelect) {
+        passwordStrengthSelect.value = settings.passwordStrength || 'same';
+      }
     }
   } catch (error) {
     // 静默处理，使用 HTML 默认值
@@ -37,6 +41,31 @@ async function saveIncognitoMode() {
     const settings = result.success ? result.settings : {};
     settings.incognitoMode = document.getElementById('incognitoMode').checked;
     await ipcRenderer.invoke('save-settings', settings);
+  } catch (error) {
+    // 静默处理
+  }
+}
+
+// 保存密码强度设置
+async function savePasswordStrength() {
+  try {
+    const result = await ipcRenderer.invoke('get-settings');
+    const settings = result.success ? result.settings : {};
+    settings.passwordStrength = document.getElementById('passwordStrength').value;
+    await ipcRenderer.invoke('save-settings', settings);
+  } catch (error) {
+    // 静默处理
+  }
+}
+
+// 加载密码强度设置
+async function loadPasswordStrength() {
+  try {
+    const result = await ipcRenderer.invoke('get-settings');
+    if (result.success && result.settings.passwordStrength) {
+      const select = document.getElementById('passwordStrength');
+      if (select) select.value = result.settings.passwordStrength;
+    }
   } catch (error) {
     // 静默处理
   }
@@ -557,7 +586,9 @@ const homeModule = {
   cancelRegistration,
   changeWindsurfPath,
   resetWindsurfPath,
-  saveIncognitoMode
+  saveIncognitoMode,
+  savePasswordStrength,
+  loadPasswordStrength
 };
 
 // 批量暴露到全局
